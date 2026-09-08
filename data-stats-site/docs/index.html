@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>데이터 속성 및 기초 통계량 분석</title>
+<link rel="stylesheet" href="./style.css" />
+</head>
+<body>
+  <header class="site-header">
+    <h1>데이터 속성 및 기초 통계량 분석</h1>
+    <p class="subtitle">CSV 또는 Excel 파일을 업로드하면 데이터 구조와 기초 통계량을 바로 확인할 수 있습니다.</p>
+  </header>
+
+  <main class="container">
+    <section class="upload-section" id="uploadSection">
+      <div class="dropzone" id="dropzone">
+        <p class="dropzone-title">파일을 여기에 끌어다 놓으세요</p>
+        <p class="dropzone-sub">CSV(.csv), Excel(.xlsx) 파일 지원 · 최대 20MB · 이 브라우저 안에서만 분석됩니다</p>
+        <button type="button" class="btn-primary" id="browseBtn">파일 선택</button>
+        <input type="file" id="fileInput" accept=".csv,.xlsx" hidden />
+      </div>
+      <p class="filename-display" id="filenameDisplay"></p>
+      <div class="error-box" id="errorBox" hidden></div>
+      <div class="loading-box" id="loadingBox" hidden>
+        <span class="spinner"></span> 분석 중입니다...
+      </div>
+    </section>
+
+    <section class="results-section" id="resultsSection" hidden>
+      <div class="tabs" id="tabs">
+        <button class="tab-btn active" data-tab="preview">데이터 미리보기</button>
+        <button class="tab-btn" data-tab="info">데이터 속성</button>
+        <button class="tab-btn" data-tab="describe">기초 통계량</button>
+      </div>
+
+      <div class="tab-panel active" id="panel-preview">
+        <h2>데이터 미리보기 <span class="hint">(상위 10개 행)</span></h2>
+        <div class="table-wrap">
+          <table id="previewTable"></table>
+        </div>
+      </div>
+
+      <div class="tab-panel" id="panel-info">
+        <h2>데이터 속성</h2>
+        <div class="summary-cards" id="summaryCards"></div>
+        <div class="table-wrap">
+          <table id="infoTable">
+            <thead>
+              <tr>
+                <th>컬럼명</th>
+                <th>데이터 타입</th>
+                <th>결측치 아닌 값</th>
+                <th>결측치 개수</th>
+                <th>결측치 비율</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="tab-panel" id="panel-describe">
+        <h2>기초 통계량 — 수치형 컬럼</h2>
+        <div class="table-wrap">
+          <table id="numericTable">
+            <thead>
+              <tr>
+                <th>컬럼명</th>
+                <th>count</th>
+                <th>mean</th>
+                <th>std</th>
+                <th>min</th>
+                <th>25%</th>
+                <th>50%</th>
+                <th>75%</th>
+                <th>max</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+          <p class="empty-note" id="numericEmptyNote" hidden>수치형 컬럼이 없습니다.</p>
+        </div>
+
+        <h2>기초 통계량 — 범주형 컬럼</h2>
+        <div class="table-wrap">
+          <table id="categoricalTable">
+            <thead>
+              <tr>
+                <th>컬럼명</th>
+                <th>count</th>
+                <th>unique</th>
+                <th>top</th>
+                <th>freq</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+          <p class="empty-note" id="categoricalEmptyNote" hidden>범주형 컬럼이 없습니다.</p>
+        </div>
+      </div>
+
+      <button type="button" class="btn-secondary" id="resetBtn">다른 파일 업로드</button>
+    </section>
+  </main>
+
+  <footer class="site-footer">
+    <p>모든 분석은 서버로 파일을 전송하지 않고 이 브라우저 안에서만 처리됩니다.</p>
+  </footer>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <script src="./app.js"></script>
+</body>
+</html>
