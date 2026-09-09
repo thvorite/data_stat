@@ -32,6 +32,7 @@
         <button class="tab-btn active" data-tab="preview">데이터 미리보기</button>
         <button class="tab-btn" data-tab="info">데이터 속성</button>
         <button class="tab-btn" data-tab="describe">기초 통계량</button>
+        <button class="tab-btn" data-tab="prep">결측치·이상치 처리</button>
       </div>
 
       <div class="tab-panel active" id="panel-preview">
@@ -98,6 +99,44 @@
           </table>
           <p class="empty-note" id="categoricalEmptyNote" hidden>범주형 컬럼이 없습니다.</p>
         </div>
+      </div>
+
+      <div class="tab-panel" id="panel-prep">
+        <div class="status-box" id="prepStatus" hidden></div>
+
+        <h2>결측치 처리</h2>
+        <div class="prep-box">
+          <p class="prep-summary" id="missingSummary"></p>
+          <div class="prep-form" id="missingForm" hidden>
+            <label>
+              컬럼 선택
+              <select id="missingColumnSelect"></select>
+            </label>
+            <label>
+              처리 방법
+              <select id="missingMethodSelect">
+                <option value="drop">결측치가 있는 행 삭제</option>
+                <option value="mean">평균값으로 대체</option>
+                <option value="median">중앙값으로 대체</option>
+                <option value="mode">최빈값으로 대체</option>
+              </select>
+            </label>
+            <button type="button" class="btn-primary" id="applyMissingBtn">적용하기</button>
+          </div>
+        </div>
+
+        <h2>이상치 처리 <span class="hint">(박스플롯 · IQR 1.5배 기준)</span></h2>
+        <div class="prep-box">
+          <label>
+            컬럼 선택
+            <select id="outlierColumnSelect"></select>
+          </label>
+          <div class="boxplot-wrap" id="boxplotWrap"></div>
+          <p class="prep-summary" id="outlierSummary"></p>
+          <button type="button" class="btn-primary" id="applyOutlierBtn" disabled>이상치 행 삭제</button>
+        </div>
+
+        <button type="button" class="btn-secondary" id="resetDataBtn">원본 데이터로 되돌리기</button>
       </div>
 
       <button type="button" class="btn-secondary" id="resetBtn">다른 파일 업로드</button>

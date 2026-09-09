@@ -11,6 +11,23 @@
   const resultsSection = document.getElementById("resultsSection");
   const resetBtn = document.getElementById("resetBtn");
 
+  const prepStatusBox = document.getElementById("prepStatus");
+  const missingSummaryEl = document.getElementById("missingSummary");
+  const missingFormEl = document.getElementById("missingForm");
+  const missingColumnSelect = document.getElementById("missingColumnSelect");
+  const missingMethodSelect = document.getElementById("missingMethodSelect");
+  const applyMissingBtn = document.getElementById("applyMissingBtn");
+  const outlierColumnSelect = document.getElementById("outlierColumnSelect");
+  const boxplotWrap = document.getElementById("boxplotWrap");
+  const outlierSummaryEl = document.getElementById("outlierSummary");
+  const applyOutlierBtn = document.getElementById("applyOutlierBtn");
+  const resetDataBtn = document.getElementById("resetDataBtn");
+
+  // originalData never changes once a file is loaded; workingData is the
+  // mutable copy that missing-value/outlier preprocessing operates on.
+  let originalData = null;
+  let workingData = null;
+
   const tabs = document.querySelectorAll(".tab-btn");
   const panels = document.querySelectorAll(".tab-panel");
 
@@ -60,6 +77,9 @@
     fileInput.value = "";
     filenameDisplay.textContent = "";
     hideError();
+    hidePrepStatus();
+    originalData = null;
+    workingData = null;
   });
 
   function showError(message) {
@@ -93,6 +113,10 @@
     if (v === undefined || v === null) return null;
     if (typeof v === "string" && v.trim() === "") return null;
     return v;
+  }
+
+  function cloneData(data) {
+    return { columns: [...data.columns], rows: data.rows.map((r) => ({ ...r })) };
   }
 
   async function parseCsv(file) {
@@ -318,8 +342,9 @@
         return;
       }
 
-      const data = buildAnalysis(columns, rows);
-      renderResults(data);
+      originalData = { columns, rows };
+      workingData = cloneData(originalData);
+      renderResults(buildAnalysis(workingData.columns, workingData.rows));
       uploadSection.hidden = true;
       resultsSection.hidden = false;
     } catch (err) {
@@ -347,17 +372,33 @@
     });
   }
 
-  function renderResults(data) {
+  function fmtValue(v) {
+    if (v === null || v === undefined) return "-";
+    return typeof v === "number" ? fmtNum(v) : escapeHtml(String(v));
+  }
+
+  function renderAllTabs(data) {
     renderSummary(data);
     renderPreview(data);
     renderInfo(data);
     renderNumeric(data);
     renderCategorical(data);
+    renderPrepPanel(data);
+  }
+
+  function renderResults(data) {
+    renderAllTabs(data);
 
     tabs.forEach((b) => b.classList.remove("active"));
     panels.forEach((p) => p.classList.remove("active"));
     tabs[0].classList.add("active");
     document.getElementById("panel-preview").classList.add("active");
+  }
+
+  // Re-analyze workingData after a preprocessing action and refresh every
+  // tab in place, without changing which tab is currently active.
+  function refreshWorkingData() {
+    renderAllTabs(buildAnalysis(workingData.columns, workingData.rows));
   }
 
   function renderSummary(data) {
@@ -455,4 +496,286 @@
       )
       .join("");
   }
+
+  // ---------- Preprocessing: missing values + outliers ----------
+
+  function populateSelect(selectEl, items) {
+    const prevValue = selectEl.value;
+    selectEl.innerHTML = "";
+    for (const item of items) {
+      const opt = document.createElement("option");
+      opt.value = item.value;
+      opt.textContent = item.label;
+      selectEl.appendChild(opt);
+    }
+    if (items.some((i) => i.value === prevValue)) selectEl.value = prevValue;
+  }
+
+  function showPrepStatus(message) {
+    prepStatusBox.textContent = message;
+    prepStatusBox.hidden = false;
+  }
+
+  function hidePrepStatus() {
+    prepStatusBox.hidden = true;
+    prepStatusBox.textContent = "";
+  }
+
+  function renderPrepPanel(data) {
+    const missingCols = data.columns_info.filter((c) => c.null_count > 0);
+    populateSelect(
+      missingColumnSelect,
+      missingCols.map((c) => ({ value: c.name, label: `${c.name} (결측 ${c.null_count}개)` }))
+    );
+    if (missingCols.length === 0) {
+      missingSummaryEl.textContent = "현재 결측치가 있는 컬럼이 없습니다.";
+      missingFormEl.hidden = true;
+    } else {
+      missingSummaryEl.textContent = `결측치가 있는 컬럼: ${missingCols.map((c) => c.name).join(", ")}`;
+      missingFormEl.hidden = false;
+      updateMissingMethodOptions();
+    }
+
+    const numericCols = data.numeric_stats.map((s) => s.name);
+    populateSelect(
+      outlierColumnSelect,
+      numericCols.map((c) => ({ value: c, label: c }))
+    );
+    if (numericCols.length === 0) {
+      boxplotWrap.innerHTML = "";
+      outlierSummaryEl.textContent = "수치형 컬럼이 없어 이상치를 확인할 수 없습니다.";
+      applyOutlierBtn.disabled = true;
+      applyOutlierBtn.dataset.column = "";
+    } else {
+      updateOutlierView();
+    }
+  }
+
+  function updateMissingMethodOptions() {
+    const col = missingColumnSelect.value;
+    if (!col) return;
+    const values = workingData.rows.map((r) => r[col]);
+    const nonNullCount = values.filter((v) => v !== null).length;
+    const dtype = inferDtype(values);
+    const isNumeric = dtype === "int64" || dtype === "float64";
+    for (const opt of missingMethodSelect.options) {
+      if (opt.value === "mean" || opt.value === "median") {
+        opt.disabled = !isNumeric || nonNullCount === 0;
+      } else if (opt.value === "mode") {
+        opt.disabled = nonNullCount === 0;
+      }
+    }
+    if (missingMethodSelect.options[missingMethodSelect.selectedIndex]?.disabled) {
+      const firstEnabled = [...missingMethodSelect.options].find((o) => !o.disabled);
+      if (firstEnabled) missingMethodSelect.value = firstEnabled.value;
+    }
+  }
+
+  missingColumnSelect.addEventListener("change", updateMissingMethodOptions);
+
+  applyMissingBtn.addEventListener("click", () => {
+    if (!workingData) return;
+    const col = missingColumnSelect.value;
+    const method = missingMethodSelect.value;
+    if (!col) return;
+
+    const beforeRows = workingData.rows.length;
+    const beforeMissing = workingData.rows.filter((r) => r[col] === null).length;
+    if (beforeMissing === 0) return;
+
+    if (method === "drop") {
+      workingData.rows = workingData.rows.filter((r) => r[col] !== null);
+      showPrepStatus(
+        `'${col}' 컬럼의 결측치가 있는 행 ${beforeMissing}개를 삭제했습니다. (${beforeRows}행 → ${workingData.rows.length}행)`
+      );
+    } else {
+      const nonNull = workingData.rows.map((r) => r[col]).filter((v) => v !== null);
+      if (nonNull.length === 0) {
+        showPrepStatus(`'${col}' 컬럼에는 대체에 사용할 값이 없습니다. 행 삭제를 이용해주세요.`);
+        return;
+      }
+      let fillValue;
+      let methodLabel;
+      if (method === "mean") {
+        const nums = nonNull.map(Number);
+        fillValue = round2(nums.reduce((a, b) => a + b, 0) / nums.length);
+        methodLabel = "평균값";
+      } else if (method === "median") {
+        const nums = nonNull.map(Number).sort((a, b) => a - b);
+        fillValue = round2(quantile(nums, 0.5));
+        methodLabel = "중앙값";
+      } else {
+        const freqMap = new Map();
+        for (const v of nonNull) {
+          const key = String(v);
+          freqMap.set(key, (freqMap.get(key) || 0) + 1);
+        }
+        let bestKey = null;
+        let bestCount = 0;
+        for (const [k, c] of freqMap.entries()) {
+          if (c > bestCount) {
+            bestCount = c;
+            bestKey = k;
+          }
+        }
+        fillValue = nonNull.find((v) => String(v) === bestKey);
+        methodLabel = "최빈값";
+      }
+      workingData.rows = workingData.rows.map((r) => (r[col] === null ? { ...r, [col]: fillValue } : r));
+      showPrepStatus(`'${col}' 컬럼의 결측치 ${beforeMissing}개를 ${methodLabel}(${fmtValue(fillValue)})로 대체했습니다.`);
+    }
+    refreshWorkingData();
+  });
+
+  function computeOutlierStats(column) {
+    const values = workingData.rows
+      .map((r) => r[column])
+      .filter((v) => v !== null)
+      .map(Number)
+      .sort((a, b) => a - b);
+    const q1 = quantile(values, 0.25);
+    const q2 = quantile(values, 0.5);
+    const q3 = quantile(values, 0.75);
+    const iqr = q3 - q1;
+    const lower = q1 - 1.5 * iqr;
+    const upper = q3 + 1.5 * iqr;
+    const outliers = values.filter((v) => v < lower || v > upper);
+    const inliers = values.filter((v) => v >= lower && v <= upper);
+    const whiskerMin = inliers.length ? inliers[0] : values[0];
+    const whiskerMax = inliers.length ? inliers[inliers.length - 1] : values[values.length - 1];
+    return { values, q1, q2, q3, iqr, lower, upper, outliers, whiskerMin, whiskerMax };
+  }
+
+  function buildBoxPlotSvg(stats) {
+    const { q1, q2, q3, lower, upper, outliers, whiskerMin, whiskerMax } = stats;
+
+    // Scale by the whisker/fence range (not raw outlier values) so a single
+    // extreme outlier can't crush the box down to a sliver. Outlier dots are
+    // clamped to the plot edge instead of stretching the axis to fit them.
+    const width = 680;
+    const height = 180;
+    const marginX = 50;
+    const plotW = width - marginX * 2;
+    const rawMin = Math.min(whiskerMin, lower);
+    const rawMax = Math.max(whiskerMax, upper);
+    const span = rawMax - rawMin || Math.abs(rawMax) || 1;
+    const pad = span * 0.18;
+    const domainMin = rawMin - pad;
+    const domainMax = rawMax + pad;
+    const scale = (v) => marginX + ((v - domainMin) / (domainMax - domainMin || 1)) * plotW;
+    const clampX = (v) => Math.min(width - 16, Math.max(16, scale(v)));
+
+    const cy = 92;
+    const boxH = 44;
+    const capH = 20;
+    const x1 = scale(q1);
+    const x2 = scale(q3);
+    const xMed = scale(q2);
+    const xWMin = scale(whiskerMin);
+    const xWMax = scale(whiskerMax);
+    const boxLeft = Math.min(x1, x2);
+    const boxWidth = Math.max(Math.abs(x2 - x1), 1);
+
+    const fenceTop = 20;
+    const fenceBottom = height - 34;
+    const xLower = scale(lower);
+    const xUpper = scale(upper);
+    const fenceLines = `
+      <line x1="${xLower.toFixed(1)}" y1="${fenceTop}" x2="${xLower.toFixed(1)}" y2="${fenceBottom}" stroke="var(--danger)" stroke-width="1" stroke-dasharray="4 3" opacity="0.7" />
+      <text x="${xLower.toFixed(1)}" y="${fenceTop - 6}" font-size="10" fill="var(--danger)" text-anchor="middle">하한 ${round2(lower)}</text>
+      <line x1="${xUpper.toFixed(1)}" y1="${fenceTop}" x2="${xUpper.toFixed(1)}" y2="${fenceBottom}" stroke="var(--danger)" stroke-width="1" stroke-dasharray="4 3" opacity="0.7" />
+      <text x="${xUpper.toFixed(1)}" y="${fenceTop - 6}" font-size="10" fill="var(--danger)" text-anchor="middle">상한 ${round2(upper)}</text>
+    `;
+
+    const outlierDots = outliers
+      .map((v) => {
+        const x = clampX(v);
+        const beyond = Math.abs(x - scale(v)) > 0.5;
+        return `<circle cx="${x.toFixed(1)}" cy="${cy}" r="4" fill="var(--danger)" opacity="0.9"><title>${round2(v)}${beyond ? " (범위 밖)" : ""}</title></circle>`;
+      })
+      .join("");
+
+    const whiskerLabelY = cy - boxH / 2 - 10;
+    const whiskerLabels = `
+      <text x="${xWMin.toFixed(1)}" y="${whiskerLabelY}" font-size="10" fill="var(--text-muted)" text-anchor="middle">min ${round2(whiskerMin)}</text>
+      <text x="${xWMax.toFixed(1)}" y="${whiskerLabelY}" font-size="10" fill="var(--text-muted)" text-anchor="middle">max ${round2(whiskerMax)}</text>
+    `;
+
+    const tickY = cy + boxH / 2 + capH / 2 + 8;
+    const quartileTicks = [
+      { v: q1, label: "Q1" },
+      { v: q2, label: "중앙값" },
+      { v: q3, label: "Q3" },
+    ]
+      .map(({ v, label }) => {
+        const x = scale(v).toFixed(1);
+        return `<line x1="${x}" y1="${tickY}" x2="${x}" y2="${tickY + 5}" stroke="var(--navy)" stroke-width="1" />
+          <text x="${x}" y="${tickY + 18}" font-size="10" fill="var(--navy)" text-anchor="middle" font-weight="600">${round2(v)}</text>
+          <text x="${x}" y="${tickY + 30}" font-size="9" fill="var(--text-muted)" text-anchor="middle">${label}</text>`;
+      })
+      .join("");
+
+    return `<svg viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:auto;display:block;">
+      ${fenceLines}
+      <line x1="${xWMin.toFixed(1)}" y1="${cy}" x2="${boxLeft.toFixed(1)}" y2="${cy}" stroke="var(--navy)" stroke-width="2" />
+      <line x1="${(boxLeft + boxWidth).toFixed(1)}" y1="${cy}" x2="${xWMax.toFixed(1)}" y2="${cy}" stroke="var(--navy)" stroke-width="2" />
+      <line x1="${xWMin.toFixed(1)}" y1="${cy - capH / 2}" x2="${xWMin.toFixed(1)}" y2="${cy + capH / 2}" stroke="var(--navy)" stroke-width="2" />
+      <line x1="${xWMax.toFixed(1)}" y1="${cy - capH / 2}" x2="${xWMax.toFixed(1)}" y2="${cy + capH / 2}" stroke="var(--navy)" stroke-width="2" />
+      <rect x="${boxLeft.toFixed(1)}" y="${cy - boxH / 2}" width="${boxWidth.toFixed(1)}" height="${boxH}" fill="var(--navy-pale)" stroke="var(--navy)" stroke-width="2" />
+      <line x1="${xMed.toFixed(1)}" y1="${cy - boxH / 2}" x2="${xMed.toFixed(1)}" y2="${cy + boxH / 2}" stroke="var(--navy)" stroke-width="2" />
+      ${whiskerLabels}
+      ${outlierDots}
+      ${quartileTicks}
+    </svg>`;
+  }
+
+  function updateOutlierView() {
+    const col = outlierColumnSelect.value;
+    if (!col || !workingData) return;
+    const stats = computeOutlierStats(col);
+    if (stats.values.length === 0) {
+      boxplotWrap.innerHTML = "";
+      outlierSummaryEl.textContent = "이 컬럼에는 값이 없습니다.";
+      applyOutlierBtn.disabled = true;
+      applyOutlierBtn.dataset.column = "";
+      return;
+    }
+    boxplotWrap.innerHTML = buildBoxPlotSvg(stats);
+    outlierSummaryEl.innerHTML = `
+      Q1: ${fmtNum(round2(stats.q1))} · 중앙값: ${fmtNum(round2(stats.q2))} · Q3: ${fmtNum(round2(stats.q3))} · IQR: ${fmtNum(round2(stats.iqr))}<br />
+      하한(Q1−1.5×IQR): ${fmtNum(round2(stats.lower))} · 상한(Q3+1.5×IQR): ${fmtNum(round2(stats.upper))}<br />
+      이상치 개수: ${stats.outliers.length}개${
+      stats.outliers.length ? " (" + stats.outliers.map((v) => fmtNum(v)).join(", ") + ")" : ""
+    }
+    `;
+    applyOutlierBtn.disabled = stats.outliers.length === 0;
+    applyOutlierBtn.dataset.column = col;
+  }
+
+  outlierColumnSelect.addEventListener("change", updateOutlierView);
+
+  applyOutlierBtn.addEventListener("click", () => {
+    if (!workingData) return;
+    const col = applyOutlierBtn.dataset.column;
+    if (!col) return;
+    const stats = computeOutlierStats(col);
+    if (stats.outliers.length === 0) return;
+    const beforeRows = workingData.rows.length;
+    workingData.rows = workingData.rows.filter((r) => {
+      const v = r[col];
+      if (v === null) return true;
+      return v >= stats.lower && v <= stats.upper;
+    });
+    showPrepStatus(
+      `'${col}' 컬럼의 이상치 ${stats.outliers.length}개 행을 삭제했습니다. (${beforeRows}행 → ${workingData.rows.length}행)`
+    );
+    refreshWorkingData();
+  });
+
+  resetDataBtn.addEventListener("click", () => {
+    if (!originalData) return;
+    workingData = cloneData(originalData);
+    showPrepStatus("원본 데이터로 되돌렸습니다.");
+    refreshWorkingData();
+  });
 })();
