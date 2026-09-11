@@ -36,7 +36,17 @@
       </div>
 
       <div class="tab-panel active" id="panel-preview">
-        <h2>데이터 미리보기 <span class="hint">(상위 10개 행)</span></h2>
+        <div class="preview-toolbar">
+          <h2>데이터 미리보기</h2>
+          <div class="preview-controls">
+            <label>
+              표시할 행 수
+              <input type="number" id="previewRowCount" min="1" max="100000" value="10" />
+            </label>
+            <button type="button" class="btn-secondary" id="downloadCsvBtn">현재 데이터 CSV 다운로드</button>
+          </div>
+        </div>
+        <p class="hint" id="previewHint"></p>
         <div class="table-wrap">
           <table id="previewTable"></table>
         </div>
@@ -62,7 +72,7 @@
       </div>
 
       <div class="tab-panel" id="panel-describe">
-        <h2>기초 통계량 — 수치형 컬럼</h2>
+        <h2>기초 통계량 — 숫자형 컬럼 <span class="hint">(값이 숫자라는 뜻으로, 학년·코드처럼 범주를 의미하는 숫자도 포함될 수 있습니다)</span></h2>
         <div class="table-wrap">
           <table id="numericTable">
             <thead>
@@ -80,10 +90,10 @@
             </thead>
             <tbody></tbody>
           </table>
-          <p class="empty-note" id="numericEmptyNote" hidden>수치형 컬럼이 없습니다.</p>
+          <p class="empty-note" id="numericEmptyNote" hidden>숫자형 컬럼이 없습니다.</p>
         </div>
 
-        <h2>기초 통계량 — 범주형 컬럼</h2>
+        <h2>기초 통계량 — 문자형 컬럼</h2>
         <div class="table-wrap">
           <table id="categoricalTable">
             <thead>
@@ -97,7 +107,7 @@
             </thead>
             <tbody></tbody>
           </table>
-          <p class="empty-note" id="categoricalEmptyNote" hidden>범주형 컬럼이 없습니다.</p>
+          <p class="empty-note" id="categoricalEmptyNote" hidden>문자형 컬럼이 없습니다.</p>
         </div>
       </div>
 

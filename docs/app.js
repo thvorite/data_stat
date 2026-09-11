@@ -23,10 +23,15 @@
   const applyOutlierBtn = document.getElementById("applyOutlierBtn");
   const resetDataBtn = document.getElementById("resetDataBtn");
 
+  const previewRowCountInput = document.getElementById("previewRowCount");
+  const previewHintEl = document.getElementById("previewHint");
+  const downloadCsvBtn = document.getElementById("downloadCsvBtn");
+
   // originalData never changes once a file is loaded; workingData is the
   // mutable copy that missing-value/outlier preprocessing operates on.
   let originalData = null;
   let workingData = null;
+  let currentBaseName = "data";
 
   const tabs = document.querySelectorAll(".tab-btn");
   const panels = document.querySelectorAll(".tab-panel");
@@ -80,6 +85,7 @@
     hidePrepStatus();
     originalData = null;
     workingData = null;
+    previewRowCountInput.value = 10;
   });
 
   function showError(message) {
@@ -295,7 +301,6 @@
     }
 
     const memBytes = estimateMemoryBytes(columns, rows);
-    const previewRows = rows.slice(0, 10);
 
     return {
       shape: { rows: nRows, cols: nCols },
@@ -304,8 +309,6 @@
       columns_info: columnsInfo,
       numeric_stats: numericStats,
       categorical_stats: categoricalStats,
-      preview_columns: columns,
-      preview_rows: previewRows,
     };
   }
 
@@ -314,6 +317,8 @@
   async function handleFile(file) {
     hideError();
     filenameDisplay.textContent = file.name;
+    const dotIdx = file.name.lastIndexOf(".");
+    currentBaseName = dotIdx > 0 ? file.name.slice(0, dotIdx) : file.name;
 
     const ext = file.name.includes(".") ? file.name.split(".").pop().toLowerCase() : "";
     if (!["csv", "xlsx"].includes(ext)) {
@@ -344,6 +349,7 @@
 
       originalData = { columns, rows };
       workingData = cloneData(originalData);
+      previewRowCountInput.value = 10;
       renderResults(buildAnalysis(workingData.columns, workingData.rows));
       uploadSection.hidden = true;
       resultsSection.hidden = false;
@@ -379,7 +385,7 @@
 
   function renderAllTabs(data) {
     renderSummary(data);
-    renderPreview(data);
+    renderPreviewFromWorkingData();
     renderInfo(data);
     renderNumeric(data);
     renderCategorical(data);
@@ -410,9 +416,39 @@
     `;
   }
 
+  // The preview table's row count is user-controlled and independent of the
+  // analysis stats, so it reads straight from workingData instead of going
+  // through buildAnalysis (which would be wasted work on every keystroke).
+  function renderPreviewFromWorkingData() {
+    if (!workingData) return;
+    const totalRows = workingData.rows.length;
+    let n = parseInt(previewRowCountInput.value, 10);
+    if (!Number.isFinite(n) || n < 1) n = 1;
+    if (n > totalRows) n = totalRows;
+    renderPreview({
+      preview_columns: workingData.columns,
+      preview_rows: workingData.rows.slice(0, n),
+      total_rows: totalRows,
+    });
+  }
+
+  previewRowCountInput.addEventListener("input", renderPreviewFromWorkingData);
+  previewRowCountInput.addEventListener("change", () => {
+    if (!workingData) return;
+    let n = parseInt(previewRowCountInput.value, 10);
+    const totalRows = workingData.rows.length;
+    if (!Number.isFinite(n) || n < 1) n = 1;
+    if (n > totalRows) n = totalRows || 1;
+    previewRowCountInput.value = n;
+    renderPreviewFromWorkingData();
+  });
+
   function renderPreview(data) {
     const table = document.getElementById("previewTable");
     const cols = data.preview_columns;
+    if (typeof data.total_rows === "number") {
+      previewHintEl.textContent = `전체 ${fmtNum(data.total_rows, 0)}행 중 ${fmtNum(data.preview_rows.length, 0)}행 표시`;
+    }
     let html = "<thead><tr>" + cols.map((c) => `<th>${escapeHtml(c)}</th>`).join("") + "</tr></thead><tbody>";
     if (data.preview_rows.length === 0) {
       html += `<tr><td colspan="${cols.length}">표시할 데이터가 없습니다.</td></tr>`;
@@ -543,7 +579,7 @@
     );
     if (numericCols.length === 0) {
       boxplotWrap.innerHTML = "";
-      outlierSummaryEl.textContent = "수치형 컬럼이 없어 이상치를 확인할 수 없습니다.";
+      outlierSummaryEl.textContent = "숫자형 컬럼이 없어 이상치를 확인할 수 없습니다.";
       applyOutlierBtn.disabled = true;
       applyOutlierBtn.dataset.column = "";
     } else {
@@ -777,5 +813,37 @@
     workingData = cloneData(originalData);
     showPrepStatus("원본 데이터로 되돌렸습니다.");
     refreshWorkingData();
+  });
+
+  // ---------- CSV export (current working data, after any preprocessing) ----------
+
+  function escapeCsvField(v) {
+    if (v === null || v === undefined) return "";
+    const s = String(v);
+    if (/[",\n\r]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+    return s;
+  }
+
+  function rowsToCsv(columns, rows) {
+    const lines = [columns.map(escapeCsvField).join(",")];
+    for (const row of rows) {
+      lines.push(columns.map((c) => escapeCsvField(row[c])).join(","));
+    }
+    return lines.join("\r\n");
+  }
+
+  downloadCsvBtn.addEventListener("click", () => {
+    if (!workingData) return;
+    // Leading BOM so Excel on Windows opens the Korean text as UTF-8 instead of guessing.
+    const csv = "﻿" + rowsToCsv(workingData.columns, workingData.rows);
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${currentBaseName}_processed.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   });
 })();
