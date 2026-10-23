@@ -1,0 +1,1672 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>데이터 모델과 성능지표</title>
+<meta name="description" content="회귀·분류·군집·연관 분석의 성능지표(MSE, 정확도, 실루엣 계수, 지지도·신뢰도·향상도)를 직접 만지며 배우는 수업용 웹앱">
+<style>
+:root{
+  --bg:#fbf8f3; --card:#ffffff; --ink:#1f2330; --muted:#4f5566; --line:#dcd6cd;
+  --reg:#FFD6E0; --reg-d:#a61e4d;
+  --cls:#D4F2D2; --cls-d:#2b6a2f;
+  --clu:#E3D9FF; --clu-d:#5f3dc4;
+  --asc:#FFE2C6; --asc-d:#a84300;
+  --good:#1b6e2f; --bad:#b42318; --focus:#1c4fd8;
+  --accent:var(--reg-d); --tint:var(--reg);
+}
+body[data-tab="reg"]{--accent:var(--reg-d);--tint:var(--reg)}
+body[data-tab="cls"]{--accent:var(--cls-d);--tint:var(--cls)}
+body[data-tab="clu"]{--accent:var(--clu-d);--tint:var(--clu)}
+body[data-tab="asc"]{--accent:var(--asc-d);--tint:var(--asc)}
+*{box-sizing:border-box}
+html{font-size:18px}
+body{margin:0;background:var(--bg);color:var(--ink);line-height:1.6;
+  font-family:"Pretendard","Noto Sans KR","Apple SD Gothic Neo","Malgun Gothic",system-ui,sans-serif}
+.wrap{max-width:1320px;margin:0 auto;padding:16px}
+h1,h2,h3,h4{line-height:1.3}
+header.top{margin:6px 0 14px}
+header.top h1{font-size:clamp(1.6rem,3.4vw,2.4rem);margin:0}
+header.top p{margin:4px 0 0;color:var(--muted)}
+
+/* 탭 */
+.tabs{display:flex;gap:8px;flex-wrap:wrap;border-bottom:4px solid var(--accent);padding:0 4px}
+.tab{font:inherit;font-size:1.15rem;font-weight:700;color:var(--ink);cursor:pointer;
+  padding:12px 20px;border:2px solid #cfc8bd;border-bottom:none;border-radius:18px 18px 0 0;
+  position:relative;top:4px}
+.tab[data-t="reg"]{background:var(--reg)} .tab[data-t="cls"]{background:var(--cls)}
+.tab[data-t="clu"]{background:var(--clu)} .tab[data-t="asc"]{background:var(--asc)}
+.tab[aria-selected="true"]{border:4px solid var(--accent);border-bottom:4px solid var(--tint);
+  padding:14px 26px;font-size:1.25rem;box-shadow:0 -4px 12px rgba(0,0,0,.08);z-index:1}
+.tab[aria-selected="true"]::before{content:"▶ "}
+.tab .tn{display:inline-block;min-width:1.6em;height:1.6em;border-radius:50%;background:#fff;
+  border:2px solid currentColor;text-align:center;line-height:1.45em;margin-right:6px;font-size:.85em}
+.panel{background:var(--tint);border-radius:0 0 22px 22px;padding:16px;margin-bottom:24px}
+.panel[hidden]{display:none}
+
+/* 카드 */
+.card{background:var(--card);border-radius:20px;padding:18px 20px;margin-bottom:16px;
+  border:1px solid var(--line);box-shadow:0 6px 18px rgba(0,0,0,.05)}
+.sec-title{display:flex;align-items:center;gap:10px;font-size:1.3rem;margin:0 0 12px}
+.badge{display:inline-grid;place-items:center;width:36px;height:36px;border-radius:50%;
+  background:var(--tint);border:3px solid var(--accent);font-weight:800;flex:none}
+.toolbar{display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end;margin:0 0 12px}
+.grid2{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:16px;align-items:start}
+@media (max-width:1000px){.grid2{grid-template-columns:minmax(0,1fr)}}
+.concept{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+@media (max-width:860px){.concept{grid-template-columns:minmax(0,1fr)}}
+.cbox{background:var(--tint);border-radius:16px;padding:12px 16px}
+.cbox h4{margin:0 0 6px;font-size:1rem;color:var(--accent)}
+.cbox p{margin:0}
+.cbox .metric-name{font-weight:800;font-size:1.1rem}
+.formula-strip{font-size:1.3rem;font-weight:800;margin-top:12px;padding:10px 16px;
+  border:3px dashed var(--accent);border-radius:14px;background:#fff;display:flex;flex-wrap:wrap;gap:6px 26px}
+h3.sub{font-size:1.15rem;margin:18px 0 8px}
+h3.sub:first-child{margin-top:0}
+.muted{color:var(--muted)}
+.small{font-size:.9rem}
+.note{font-size:.95rem;color:var(--muted);margin:6px 0}
+
+/* 버튼·입력 */
+.btn{font:inherit;font-weight:700;min-height:44px;padding:6px 16px;border-radius:12px;
+  border:2px solid var(--accent);background:#fff;color:var(--ink);cursor:pointer}
+.btn.primary{background:var(--tint)}
+.btn:hover{background:#f6f3ee}
+.btn.primary:hover{filter:brightness(.97)}
+.btn.tiny{min-height:34px;padding:2px 10px;font-size:.9rem}
+.btn:disabled{opacity:.5;cursor:not-allowed}
+:focus-visible{outline:4px solid var(--focus);outline-offset:2px}
+input[type=text],input[type=number],select{font:inherit;font-size:1.05rem;padding:6px 10px;
+  border:2px solid #b9b2a6;border-radius:10px;background:#fff;color:var(--ink);min-height:44px}
+input[type=range]{width:100%;accent-color:var(--accent);height:32px}
+input[type=checkbox]{width:22px;height:22px;accent-color:var(--accent);vertical-align:middle}
+.row{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin:8px 0}
+.slider-row{display:grid;grid-template-columns:4.5em minmax(0,1fr) 7em;gap:10px;align-items:center;margin:6px 0}
+.slider-row input[type=number]{width:100%}
+.switch{display:inline-flex;align-items:center;gap:8px;cursor:pointer;padding:4px 10px;border-radius:10px;
+  background:#fff;border:2px solid var(--line)}
+.err{color:var(--bad);font-weight:700;min-height:1.6em;margin:4px 0}
+.okmsg{color:var(--good);font-weight:700}
+.formula-input{font-size:1.4rem !important;font-weight:700;width:min(100%,360px)}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);border:0}
+
+/* 표 */
+.tablewrap{overflow:auto;border-radius:12px;border:1px solid var(--line);background:#fff}
+.tablewrap.tall{max-height:460px}
+table.data{border-collapse:collapse;width:100%;font-size:1rem}
+table.data th,table.data td{border:1px solid var(--line);padding:6px 8px;text-align:center}
+table.data thead th{background:var(--tint);position:sticky;top:0;z-index:1}
+table.data tfoot td{background:#f7f4ef;font-weight:800}
+table.data td input[type=number]{width:5.5em;min-height:38px;padding:2px 6px}
+table.data tr.sel td{background:#fff6c7}
+table.data tr.clickable{cursor:pointer}
+table.data tr.clickable:hover td{background:#faf6ee}
+.th-btn{font:inherit;font-weight:800;background:none;border:none;cursor:pointer;color:var(--ink);padding:2px 4px}
+
+/* 계산 과정 */
+.calc .step{font-size:1.1rem;margin:6px 0;padding:6px 12px;border-left:5px solid var(--tint);background:#fbfaf8;border-radius:6px}
+.calc .big{font-size:1.5rem;font-weight:800;margin:10px 0;padding:10px 14px;background:var(--tint);border-radius:12px;word-break:break-word}
+.calc .big b,.hl{color:var(--accent)}
+.interp{font-size:1.15rem;font-weight:700;margin:10px 0;padding:10px 14px;border-radius:12px;background:#fff;border:2px solid var(--accent)}
+.meter{font-size:2.2rem;font-weight:900;color:var(--accent)}
+.bars .bar{display:grid;grid-template-columns:8.5em minmax(0,1fr) 5em;gap:8px;align-items:center;margin:6px 0}
+.bars .track{background:#f0ece6;border-radius:8px;height:26px;overflow:hidden}
+.bars .fill{height:100%;border-radius:8px}
+
+/* 그래프 */
+svg.plot{width:100%;height:auto;background:#fff;border-radius:14px;border:1px solid var(--line);
+  touch-action:none;user-select:none;-webkit-user-select:none;display:block}
+.g-minor{stroke:#efece7;stroke-width:1}
+.g-major{stroke:#d8d3cb;stroke-width:1}
+.axis{stroke:#3a3f4b;stroke-width:2}
+.frame{fill:none;stroke:#bdb6aa;stroke-width:1.5}
+.tick{font-size:15px;fill:#3a3f4b}
+.axis-title{font-size:16px;font-weight:700;fill:#2a2f3a}
+.halo{paint-order:stroke;stroke:#fff;stroke-width:5px;stroke-linejoin:round}
+.hint-line{font-size:.92rem;color:var(--muted);margin:6px 2px}
+/* 회귀 */
+.my-line{stroke:#a61e4d;stroke-width:4}
+.ls-line{stroke:#1864ab;stroke-width:3.5;stroke-dasharray:12 8}
+.resid{stroke:#d9480f;stroke-width:3;stroke-dasharray:5 4}
+.pt .dot{fill:#2b2f6b;stroke:#fff;stroke-width:2.5}
+.pt .hit{fill:transparent;cursor:grab}
+.pt-num{font-size:14px;font-weight:800;fill:#2b2f6b;pointer-events:none}
+.err-lbl{font-size:15px;font-weight:800;fill:#c2410c;pointer-events:none}
+.legend{display:flex;flex-wrap:wrap;gap:6px 18px;margin:8px 2px;font-size:.98rem}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+.sw{display:inline-block;width:34px;height:0;border-top:4px solid}
+/* 분류 */
+.mark-group{display:inline-flex;gap:6px}
+.mark-group label{display:inline-flex;align-items:center;gap:4px;padding:4px 10px;border:2px solid #b9b2a6;
+  border-radius:10px;cursor:pointer;font-weight:800;background:#fff}
+.mark-group input{position:absolute;opacity:0;width:1px;height:1px}
+.mark-group input:checked + span{color:#fff}
+.mark-group label:has(input:checked){background:var(--accent);border-color:var(--accent);color:#fff}
+.mark-group label:has(input:focus-visible){outline:4px solid var(--focus);outline-offset:2px}
+.flag{font-weight:800}
+.flag.bad{color:var(--bad)} .flag.good{color:var(--good)}
+.pred-btn{font:inherit;font-weight:700;background:#fff;border:2px dashed #9a9285;border-radius:10px;padding:2px 10px;cursor:pointer;min-height:36px}
+details.deep{background:#fff;border-radius:18px;border:2px solid var(--accent);padding:12px 18px}
+details.deep summary{font-weight:800;font-size:1.15rem;cursor:pointer}
+.defect-grid{display:grid;grid-template-columns:repeat(20,minmax(0,1fr));gap:3px;max-width:560px;margin:10px 0}
+.defect-grid span{aspect-ratio:1;display:grid;place-items:center;font-size:.8rem;border-radius:4px;background:#e7f5e6;color:#2b6a2f}
+.defect-grid span.bad{background:#ffe0d6;color:#b42318;font-weight:900}
+/* 군집 */
+.phase{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0}
+.phase span{padding:4px 12px;border-radius:999px;border:2px solid #b9b2a6;background:#fff;font-weight:700}
+.phase span.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+.phase span.done{border-color:var(--good);color:var(--good)}
+.clu-legend{display:flex;flex-wrap:wrap;gap:8px}
+.clu-legend .chip{display:inline-flex;align-items:center;gap:6px;padding:4px 12px;border-radius:999px;background:#fff;border:2px solid var(--line);font-weight:700}
+.sil-same{stroke-width:2.2;stroke-dasharray:6 4}
+.sil-other{stroke:#495057;stroke-width:2;stroke-dasharray:2 4}
+.dist-lbl{font-size:13px;font-weight:700;pointer-events:none}
+.msgbox{padding:10px 14px;border-radius:12px;background:#fff;border:2px solid var(--line);font-weight:700;margin:8px 0}
+.msgbox.warn{border-color:var(--bad);color:var(--bad)}
+/* 연관 */
+.rule-pick{display:flex;flex-wrap:wrap;gap:10px;align-items:center;font-size:1.25rem;font-weight:800}
+.rule-pick select{font-size:1.2rem;font-weight:800}
+/* 확인하기 */
+.chk-row{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:12px 0;border-bottom:1px dashed var(--line)}
+.chk-row:last-child{border-bottom:none}
+.chk-row > label{min-width:15em;font-weight:800}
+.chk-row input[type=text]{width:9em;font-size:1.25rem;font-weight:700}
+.fb{font-weight:800;font-size:1.1rem;min-height:1.4em;flex-basis:100%}
+.fb.ok{color:var(--good)} .fb.no{color:var(--bad)}
+.hintbox,.ansbox{flex-basis:100%;padding:8px 12px;border-radius:10px}
+.hintbox{background:#fff8db;border:1px solid #e9cf6a}
+.ansbox{background:#eef4ff;border:1px solid #9db8ef;font-weight:800}
+.practice{background:#fbfaf8;border:2px dashed var(--line);border-radius:14px;padding:12px 16px;margin-top:12px}
+.practice .row label{display:inline-flex;align-items:center;gap:6px}
+.practice input[type=number]{width:6.5em}
+footer{color:var(--muted);font-size:.9rem;text-align:center;padding:10px 0 30px}
+</style>
+</head>
+<body data-tab="reg">
+<div class="wrap">
+<header class="top">
+  <h1>데이터 모델과 성능지표</h1>
+  <p>모델이 얼마나 잘 맞혔는지, 지표를 직접 만지면서 계산해 봐요.</p>
+</header>
+
+<div class="tabs" role="tablist" aria-label="분석 종류">
+  <button class="tab" role="tab" id="tab-reg" data-t="reg" aria-controls="panel-reg" aria-selected="true"><span class="tn">1</span>회귀 분석</button>
+  <button class="tab" role="tab" id="tab-cls" data-t="cls" aria-controls="panel-cls" aria-selected="false" tabindex="-1"><span class="tn">2</span>분류 분석</button>
+  <button class="tab" role="tab" id="tab-clu" data-t="clu" aria-controls="panel-clu" aria-selected="false" tabindex="-1"><span class="tn">3</span>군집 분석</button>
+  <button class="tab" role="tab" id="tab-asc" data-t="asc" aria-controls="panel-asc" aria-selected="false" tabindex="-1"><span class="tn">4</span>연관 분석</button>
+</div>
+
+<!-- ===================== 1. 회귀 ===================== -->
+<section class="panel" role="tabpanel" id="panel-reg" aria-labelledby="tab-reg">
+  <div class="toolbar">
+    <button class="btn" type="button" id="regReset">초기화</button>
+    <button class="btn primary" type="button" id="regExample">예시 데이터 불러오기</button>
+  </div>
+  <div class="card">
+    <h2 class="sec-title"><span class="badge">①</span>개념 요약 · 회귀분석</h2>
+    <div class="concept">
+      <div class="cbox"><h4>모델의 목적</h4><p>독립변수와 종속변수 사이의 인과관계를 찾아 연속형인 종속변수의 값을 예측</p></div>
+      <div class="cbox"><h4>지표</h4><p class="metric-name">평균 제곱 오차(MSE)</p><p>오차를 제곱해서 모두 더한 뒤 평균을 낸 값. 값이 작을수록 예측이 정확</p></div>
+      <div class="cbox"><h4>값의 해석</h4><p><b>값이 작을수록</b> 예측이 정확 (0이면 모든 점을 정확히 예측)</p></div>
+    </div>
+    <div class="formula-strip"><span>오차 = y − ŷ</span><span>MSE = Σ(y − ŷ)² ÷ n</span></div>
+  </div>
+
+  <div class="grid2">
+    <div class="card">
+      <h2 class="sec-title"><span class="badge">②</span>실습 · 점을 찍고 직선 맞추기</h2>
+      <svg class="plot" id="regSvg" viewBox="0 0 640 510" role="img" aria-label="회귀 좌표평면. 점과 회귀선, 오차 선분이 표시됩니다."></svg>
+      <p class="hint-line">빈 곳 클릭: 점 추가 · 점 드래그: 이동 · 더블클릭/우클릭: 삭제 (표에서 숫자로 고칠 수도 있어요)</p>
+      <div class="legend">
+        <span><i class="sw" style="border-color:#a61e4d"></i>내 직선</span>
+        <span><i class="sw" style="border-top-style:dashed;border-color:#1864ab"></i>최소 제곱 회귀선</span>
+        <span><i class="sw" style="border-top:3px dashed #d9480f"></i>오차(세로 선분)</span>
+      </div>
+
+      <h3 class="sub"><label for="regFormula">회귀선 수식</label></h3>
+      <div class="row">
+        <input type="text" id="regFormula" class="formula-input" autocomplete="off" spellcheck="false" aria-describedby="regFormulaMsg" placeholder="예: y = 3x − 45">
+      </div>
+      <div id="regFormulaMsg" class="err" aria-live="polite"></div>
+      <div class="slider-row">
+        <label for="regA">기울기 a</label>
+        <input type="range" id="regA" min="-10" max="10" step="0.05">
+        <input type="number" id="regAN" step="0.05" aria-label="기울기 a 숫자 입력">
+      </div>
+      <div class="slider-row">
+        <label for="regB">절편 b</label>
+        <input type="range" id="regB" min="-100" max="100" step="0.5">
+        <input type="number" id="regBN" step="0.5" aria-label="절편 b 숫자 입력">
+      </div>
+      <div class="row" aria-live="polite">
+        <span>지금 내 직선의 MSE</span><span class="meter" id="regLive">—</span><span id="regTrend" class="muted"></span>
+      </div>
+      <div class="row">
+        <label class="switch"><input type="checkbox" id="regShowRes" checked> 오차 선분 보기</label>
+        <label class="switch"><input type="checkbox" id="regShowLbl" checked> 점 옆에 오차 값 표시</label>
+        <label class="switch"><input type="checkbox" id="regShowLS"> 최소 제곱 회귀선 보기</label>
+      </div>
+
+      <h3 class="sub">데이터 표</h3>
+      <div class="tablewrap tall">
+        <table class="data">
+          <thead><tr><th>번호</th><th>x</th><th>실제값 y</th><th>예측값 ŷ</th><th>오차 (y − ŷ)</th><th>오차²</th><th>삭제</th></tr></thead>
+          <tbody id="regTbody"></tbody>
+          <tfoot><tr><td colspan="5">오차² 합계</td><td id="regSumCell">0</td><td></td></tr></tfoot>
+        </table>
+      </div>
+      <div class="row">
+        <label>x <input type="number" id="regAddX" step="any" style="width:6em"></label>
+        <label>y <input type="number" id="regAddY" step="any" style="width:6em"></label>
+        <button class="btn" type="button" id="regAddBtn">점 추가</button>
+        <span class="small muted">(그래프 범위를 벗어나는 값은 그래프가 자동으로 넓어져요)</span>
+      </div>
+    </div>
+
+    <div>
+      <div class="card calc">
+        <h2 class="sec-title"><span class="badge">③</span>지표 계산 과정</h2>
+        <div id="regCalc"></div>
+        <div id="regCompare"></div>
+      </div>
+      <div class="card">
+        <h2 class="sec-title"><span class="badge">④</span>내 계산 확인하기</h2>
+        <div id="regCheck"></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ===================== 2. 분류 ===================== -->
+<section class="panel" role="tabpanel" id="panel-cls" aria-labelledby="tab-cls" hidden>
+  <div class="toolbar">
+    <button class="btn" type="button" id="clsReset">초기화</button>
+    <button class="btn primary" type="button" id="clsExample">예시 데이터 불러오기</button>
+  </div>
+  <div class="card">
+    <h2 class="sec-title"><span class="badge">①</span>개념 요약 · 분류 분석</h2>
+    <div class="concept">
+      <div class="cbox"><h4>모델의 목적</h4><p>미리 정해 둔 그룹 중 어느 그룹에 데이터가 속하는지 범주형 종속변수 값을 예측</p></div>
+      <div class="cbox"><h4>지표</h4><p class="metric-name">정확도(Accuracy)</p><p>모델이 정확하게 예측한 데이터의 비율. 1에 가까울수록 예측이 정확</p></div>
+      <div class="cbox"><h4>값의 해석</h4><p>0 ~ 1 사이 값. <b>1에 가까울수록</b> 예측이 정확</p></div>
+    </div>
+    <div class="formula-strip"><span>정확도 = 정확히 예측한 수 ÷ 전체 수</span></div>
+  </div>
+
+  <div class="grid2">
+    <div class="card">
+      <h2 class="sec-title"><span class="badge">②</span>실습 A · 직접 채점하기</h2>
+      <p class="note">실제값과 모델의 예측값을 비교해 각 행에 <b>O(맞음)</b> 또는 <b>X(틀림)</b>를 체크하세요. 예측값 칸을 누르면 예측을 바꿔 볼 수 있어요.</p>
+      <div class="tablewrap">
+        <table class="data">
+          <thead><tr><th>번호</th><th>메일 제목</th><th>실제값</th><th>모델 예측값</th><th>채점</th><th class="sr-col">점검</th></tr></thead>
+          <tbody id="clsATbody"></tbody>
+        </table>
+      </div>
+      <div class="row">
+        <button class="btn" type="button" id="clsAVerify">내 채점 점검하기</button>
+        <button class="btn" type="button" id="clsAClear">채점 지우기</button>
+        <span id="clsAVerifyMsg" aria-live="polite" class="small"></span>
+      </div>
+    </div>
+    <div class="card calc">
+      <h2 class="sec-title"><span class="badge">③</span>계산 과정 (실습 A)</h2>
+      <div id="clsACalc"></div>
+    </div>
+  </div>
+
+  <div class="grid2">
+    <div class="card">
+      <h2 class="sec-title"><span class="badge">②</span>실습 B · 경계선으로 분류하기</h2>
+      <p class="note">공부 시간과 게임 시간으로 합격(●)/불합격(▲)을 예측해요. 기준선을 움직여 정확도를 높여 보세요.</p>
+      <svg class="plot" id="clsSvg" viewBox="0 0 620 480" role="img" aria-label="분류 산점도. 기준선과 각 점의 예측 결과(O, X)가 표시됩니다."></svg>
+      <div class="legend">
+        <span><svg width="20" height="20" aria-hidden="true"><circle cx="10" cy="10" r="7" fill="#1864ab"/></svg>실제 합격</span>
+        <span><svg width="20" height="20" aria-hidden="true"><polygon points="10,2 18,17 2,17" fill="#c2410c"/></svg>실제 불합격</span>
+        <span><b class="flag good">O</b> 예측 맞음</span><span><b class="flag bad">X</b> 예측 틀림</span>
+        <span><i style="display:inline-block;width:22px;height:16px;background:#d0ebff;border:1px solid #74a9d8"></i>합격으로 예측하는 영역</span>
+      </div>
+      <p class="hint-line">빈 곳 클릭: 아래에서 고른 종류의 점 추가 · 더블클릭/우클릭: 삭제</p>
+      <div class="slider-row"><label for="clsM">기울기</label><input type="range" id="clsM" min="-3" max="3" step="0.1"><input type="number" id="clsMN" step="0.1" aria-label="기준선 기울기 숫자 입력"></div>
+      <div class="slider-row"><label for="clsC">절편</label><input type="range" id="clsC" min="-5" max="15" step="0.1"><input type="number" id="clsCN" step="0.1" aria-label="기준선 절편 숫자 입력"></div>
+      <div class="row">
+        <label class="switch"><input type="checkbox" id="clsFlip"> 기준선 위쪽을 합격으로 예측</label>
+        <label>추가할 점: <select id="clsAddType"><option value="P">● 합격</option><option value="F">▲ 불합격</option></select></label>
+      </div>
+      <p class="big" id="clsLineText" style="font-weight:800"></p>
+    </div>
+    <div class="card calc">
+      <h2 class="sec-title"><span class="badge">③</span>계산 과정 (실습 B)</h2>
+      <div id="clsBCalc"></div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2 class="sec-title"><span class="badge">④</span>내 계산 확인하기</h2>
+    <div id="clsCheck"></div>
+  </div>
+
+  <details class="deep">
+    <summary>심화 · 정확도만 보면 충분할까? (정확도의 한계 생각해 보기)</summary>
+    <p>공장에서 만든 제품 <b>100개</b> 중 <b>불량품은 5개</b>(▲)예요. 어떤 모델이 아무것도 확인하지 않고 <b>“모두 정상”</b>이라고 예측했어요.</p>
+    <div class="defect-grid" id="defectGrid" aria-label="제품 100개 중 불량품 5개"></div>
+    <div class="calc"><div class="big">정확도 = 95 ÷ 100 = <b>0.95</b></div></div>
+    <p>정확도는 0.95로 아주 높아 보여요. 하지만 이 모델은 <b>불량품을 단 하나도 찾아내지 못했어요.</b></p>
+    <ul>
+      <li>이 모델을 공장에서 써도 될까요? 왜 그렇게 생각하나요?</li>
+      <li>한쪽 그룹이 훨씬 많은 데이터(불균형 데이터)에서는 정확도가 왜 높게 나올까요?</li>
+      <li>“불량품 중 몇 개를 찾았는가?”처럼 정확도 말고 함께 봐야 할 기준을 생각해 보세요. (예: 재현율, 정밀도)</li>
+    </ul>
+  </details>
+</section>
+
+<!-- ===================== 3. 군집 ===================== -->
+<section class="panel" role="tabpanel" id="panel-clu" aria-labelledby="tab-clu" hidden>
+  <div class="toolbar">
+    <button class="btn" type="button" id="cluReset">초기화</button>
+    <button class="btn primary" type="button" id="cluExample">예시 데이터 불러오기</button>
+  </div>
+  <div class="card">
+    <h2 class="sec-title"><span class="badge">①</span>개념 요약 · 군집 분석</h2>
+    <div class="concept">
+      <div class="cbox"><h4>모델의 목적</h4><p>비슷한 특성을 가진 데이터끼리 묶어 그룹화. 미리 정해 둔 분류 기준이 없으므로 군집된 데이터 사이의 거리를 기준으로 평가</p></div>
+      <div class="cbox"><h4>지표</h4><p class="metric-name">실루엣 계수(Silhouette coefficient)</p><p>데이터가 자기 군집 안에서는 얼마나 가깝고, 다른 군집과는 얼마나 먼지를 나타내는 값. 1에 가까울수록 군집이 잘 형성됨</p></div>
+      <div class="cbox"><h4>값의 해석</h4><p>−1 ~ 1 사이 값. <b>1에 가까울수록</b> 군집이 잘 형성됨, 0 근처면 군집 경계에 있음, 음수면 다른 군집에 더 가까움</p></div>
+    </div>
+    <div class="formula-strip"><span>aᵢ = 같은 군집 다른 점까지 평균 거리</span><span>bᵢ = 가장 가까운 다른 군집 점들까지 평균 거리</span><span>Sᵢ = (bᵢ − aᵢ) ÷ max(aᵢ, bᵢ)</span></div>
+  </div>
+
+  <div class="grid2">
+    <div class="card">
+      <h2 class="sec-title"><span class="badge">②</span>실습 · k-평균으로 군집 만들기</h2>
+      <div class="row">
+        <label for="cluDataset">예시 데이터</label>
+        <select id="cluDataset">
+          <option value="three">뚜렷하게 3묶음</option>
+          <option value="two">뚜렷하게 2묶음</option>
+          <option value="mixed">애매하게 섞인 데이터</option>
+        </select>
+        <button class="btn" type="button" id="cluLoad">불러오기</button>
+      </div>
+      <div class="slider-row">
+        <label for="cluK">군집 수 k</label>
+        <input type="range" id="cluK" min="2" max="6" step="1" value="3">
+        <input type="number" id="cluKN" min="2" max="6" step="1" value="3" aria-label="군집 수 k 숫자 입력">
+      </div>
+      <div class="row">
+        <button class="btn primary" type="button" id="cluStep">한 단계씩 실행</button>
+        <button class="btn primary" type="button" id="cluRun">끝까지 실행</button>
+        <button class="btn" type="button" id="cluReinit">초기 중심 다시 뽑기</button>
+      </div>
+      <div class="phase" id="cluPhase" aria-label="k-평균 진행 단계"></div>
+      <div class="msgbox" id="cluMsg" aria-live="polite"></div>
+      <svg class="plot" id="cluSvg" viewBox="0 0 560 540" role="img" aria-label="군집 산점도. 군집별로 색과 모양이 다릅니다."></svg>
+      <p class="hint-line">점 클릭: 그 점의 실루엣 계산 보기 · 빈 곳 클릭: 점 추가 · 더블클릭/우클릭: 삭제</p>
+      <div class="row">
+        <label class="switch"><input type="checkbox" id="cluAddMode" checked> 빈 곳 클릭으로 점 추가</label>
+        <label class="switch"><input type="checkbox" id="cluDistLbl" checked> 거리 숫자 표시</label>
+        <label>선택한 점 <select id="cluSel"></select></label>
+      </div>
+      <div class="clu-legend" id="cluLegend"></div>
+    </div>
+    <div>
+      <div class="card calc">
+        <h2 class="sec-title"><span class="badge">③</span>실루엣 계수 계산 과정</h2>
+        <div id="cluCalc"></div>
+        <div class="practice">
+          <h3 class="sub">aᵢ, bᵢ를 넣어 Sᵢ 계산해 보기</h3>
+          <div class="row">
+            <label>aᵢ <input type="number" id="silA" value="4" step="any" min="0"></label>
+            <label>bᵢ <input type="number" id="silB" value="10" step="any" min="0"></label>
+          </div>
+          <div id="silOut" class="big" aria-live="polite"></div>
+        </div>
+      </div>
+      <div class="card">
+        <h3 class="sub" style="margin-top:0">k에 따른 평균 실루엣 계수 비교</h3>
+        <svg class="plot" id="cluChart" viewBox="0 0 520 290" role="img" aria-label="k = 2부터 6까지 평균 실루엣 계수 막대 그래프"></svg>
+        <p class="note" id="cluChartNote"></p>
+      </div>
+    </div>
+  </div>
+  <div class="card">
+    <h2 class="sec-title"><span class="badge">④</span>내 계산 확인하기</h2>
+    <div id="cluCheck"></div>
+  </div>
+</section>
+
+<!-- ===================== 4. 연관 ===================== -->
+<section class="panel" role="tabpanel" id="panel-asc" aria-labelledby="tab-asc" hidden>
+  <div class="toolbar">
+    <button class="btn" type="button" id="ascReset">초기화</button>
+    <button class="btn primary" type="button" id="ascExample">예시 데이터 불러오기</button>
+  </div>
+  <div class="card">
+    <h2 class="sec-title"><span class="badge">①</span>개념 요약 · 연관 분석</h2>
+    <div class="concept">
+      <div class="cbox"><h4>모델의 목적</h4><p>데이터 내에서 항목 간의 관계와 연관성을 발견. 발견된 규칙의 유용성 판단을 통해 항목 간 연관성을 측정</p></div>
+      <div class="cbox"><h4>지표</h4>
+        <p><b>지지도(support)</b>: 데이터 집합에서 규칙이 얼마나 자주 발생하는지</p>
+        <p><b>신뢰도(confidence)</b>: 규칙이 성립했을 때 그 규칙이 맞을 확률</p>
+        <p><b>향상도(lift)</b>: 규칙이 얼마나 유용한지. 1보다 크면 두 항목 사이에 관련성이 높음</p></div>
+      <div class="cbox"><h4>값의 해석</h4><p>향상도 ≥ 1: 관련성이 높음<br>향상도 &lt; 1: 함께 사는 경우가 오히려 적음</p></div>
+    </div>
+    <div class="formula-strip">
+      <span>지지도 = (A와 B가 함께 나온 횟수) ÷ (전체 횟수)</span>
+      <span>신뢰도 = (A와 B가 함께 나온 횟수) ÷ (A가 나온 횟수)</span>
+      <span>향상도 = 신뢰도 ÷ (B가 나올 확률)</span>
+    </div>
+  </div>
+
+  <div class="grid2">
+    <div class="card">
+      <h2 class="sec-title"><span class="badge">②</span>실습 · 장바구니 데이터</h2>
+      <p class="note">체크박스로 거래(행)마다 산 상품을 고쳐 보세요.</p>
+      <div class="tablewrap tall">
+        <table class="data" id="ascTable">
+          <thead id="ascThead"></thead>
+          <tbody id="ascTbody"></tbody>
+          <tfoot id="ascTfoot"></tfoot>
+        </table>
+      </div>
+      <div class="row"><button class="btn" type="button" id="ascAdd">거래 추가</button><span id="ascCount" class="muted"></span></div>
+
+      <h3 class="sub">규칙 만들기</h3>
+      <div class="rule-pick">
+        <span>[</span><select id="ascA" aria-label="앞부분 상품 A"></select><span>] →</span>
+        <span>[</span><select id="ascB" aria-label="뒷부분 상품 B"></select><span>]</span>
+      </div>
+      <p class="note">“A를 사면 B도 산다”라는 규칙이에요.</p>
+
+      <h3 class="sub">A, B, A∩B 횟수 보기</h3>
+      <svg class="plot" id="ascVenn" viewBox="0 0 440 250" role="img" aria-label="A와 B의 벤 다이어그램"></svg>
+      <div class="bars" id="ascBars"></div>
+    </div>
+    <div>
+      <div class="card calc">
+        <h2 class="sec-title"><span class="badge">③</span>지표 계산 과정</h2>
+        <div id="ascCalc"></div>
+        <div class="practice">
+          <h3 class="sub">횟수만 넣어 계산해 보기</h3>
+          <div class="row">
+            <label>전체 횟수 <input type="number" id="pN" value="200" min="1" step="1"></label>
+            <label>A 횟수 <input type="number" id="pA" value="50" min="0" step="1"></label>
+            <label>B 횟수 <input type="number" id="pB" value="40" min="0" step="1"></label>
+            <label>A와 B 함께 <input type="number" id="pAB" value="20" min="0" step="1"></label>
+          </div>
+          <div id="pOut" aria-live="polite"></div>
+        </div>
+      </div>
+      <div class="card">
+        <h2 class="sec-title"><span class="badge">④</span>내 계산 확인하기</h2>
+        <div id="ascCheck"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3 class="sub" style="margin-top:0">모든 1:1 규칙 표 <span class="small muted">(행을 누르면 위 계산 과정으로 연결돼요)</span></h3>
+    <div class="row">
+      <label class="switch"><input type="checkbox" id="ascHideZero" checked> 함께 나온 적 없는 규칙 숨기기</label>
+      <span class="small muted">정렬: 열 제목을 누르세요</span>
+    </div>
+    <div class="tablewrap tall">
+      <table class="data">
+        <thead><tr>
+          <th aria-sort="none" data-k="rule"><button class="th-btn" type="button" data-k="rule">규칙 A → B</button></th>
+          <th aria-sort="none" data-k="nAB"><button class="th-btn" type="button" data-k="nAB">함께 나온 횟수</button></th>
+          <th aria-sort="none" data-k="sup"><button class="th-btn" type="button" data-k="sup">지지도</button></th>
+          <th aria-sort="none" data-k="conf"><button class="th-btn" type="button" data-k="conf">신뢰도</button></th>
+          <th aria-sort="none" data-k="lift"><button class="th-btn" type="button" data-k="lift">향상도</button></th>
+        </tr></thead>
+        <tbody id="ascRules"></tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<footer>오프라인에서도 동작하는 단일 파일 웹앱 · 수업용</footer>
+</div>
+
+<script>
+'use strict';
+/* =========================================================
+   공통 도우미
+   ========================================================= */
+const $ = (sel, root = document) => root.querySelector(sel);
+const SVGNS = 'http://www.w3.org/2000/svg';
+
+function setAttrs(e, attrs) {
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (v == null || v === false) continue;
+    if (k === 'text') e.textContent = v;
+    else if (k === 'html') e.innerHTML = v;
+    else if (k.startsWith('on') && typeof v === 'function') e.addEventListener(k.slice(2), v);
+    else e.setAttribute(k, v === true ? '' : v);
+  }
+}
+function h(tag, attrs, ...kids) {
+  const e = document.createElement(tag); setAttrs(e, attrs);
+  kids.flat().forEach(k => { if (k != null && k !== false) e.append(k.nodeType ? k : String(k)); });
+  return e;
+}
+function s(tag, attrs, ...kids) {
+  const e = document.createElementNS(SVGNS, tag); setAttrs(e, attrs);
+  kids.flat().forEach(k => { if (k != null && k !== false) e.append(k.nodeType ? k : String(k)); });
+  return e;
+}
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+const avg = arr => arr.length ? arr.reduce((p, q) => p + q, 0) / arr.length : 0;
+
+/** 숫자를 소수 d자리까지 반올림해 보기 좋게 표시 (음수는 유니코드 −) */
+function fmt(x, d = 2) {
+  if (x == null || !isFinite(x)) return '—';
+  let r = Math.round(x * 10 ** d) / 10 ** d;
+  if (Object.is(r, -0) || r === 0) r = 0;
+  return (r < 0 ? '−' : '') + String(Math.abs(r));
+}
+const fmtSigned = (x, d = 2) => { const t = fmt(x, d); return (t !== '0' && t[0] !== '−') ? '+' + t : t; };
+
+/** 학생 입력 숫자 해석: 0.7, .7, 7/10, 70%, −0.3 등 (eval 사용 안 함) */
+function parseNum(str) {
+  let t = String(str).trim().replace(/[−–—]/g, '-').replace(/÷/g, '/').replace(/,/g, '').replace(/\s+/g, '');
+  let pct = false;
+  if (t.endsWith('%')) { pct = true; t = t.slice(0, -1); }
+  const m = t.match(/^([+-]?(?:\d+\.?\d*|\.\d+))(?:\/([+-]?(?:\d+\.?\d*|\.\d+)))?$/);
+  if (!m) return null;
+  let v = parseFloat(m[1]);
+  if (m[2] !== undefined) { const d = parseFloat(m[2]); if (d === 0) return null; v /= d; }
+  return pct ? v / 100 : v;
+}
+
+/** 시드가 있는 난수(예시 데이터를 항상 같게 만들기 위함) */
+function makeRng(seed) {
+  return function () {
+    seed = (seed + 0x6D2B79F5) | 0;
+    let t = Math.imul(seed ^ (seed >>> 15), 1 | seed);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+function gauss(r) { let u = 0, v = 0; while (u === 0) u = r(); while (v === 0) v = r(); return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v); }
+
+/* ---------- 좌표평면 그리기 ---------- */
+function makePlot(box, dom) {
+  return {
+    box, dom,
+    X: x => box.l + (x - dom.x0) / (dom.x1 - dom.x0) * (box.r - box.l),
+    Y: y => box.b - (y - dom.y0) / (dom.y1 - dom.y0) * (box.b - box.t),
+    iX: px => dom.x0 + (px - box.l) / (box.r - box.l) * (dom.x1 - dom.x0),
+    iY: py => dom.y0 + (box.b - py) / (box.b - box.t) * (dom.y1 - dom.y0),
+  };
+}
+function drawAxes(svg, p, o) {
+  const { box, dom } = p, g = s('g', {});
+  const isMajor = (v, step) => Math.abs(v / step - Math.round(v / step)) < 1e-9;
+  for (let i = Math.ceil(dom.x0 / o.xs - 1e-9); i * o.xs <= dom.x1 + 1e-9; i++) {
+    const x = i * o.xs, mj = isMajor(x, o.xl);
+    g.append(s('line', { x1: p.X(x), x2: p.X(x), y1: box.t, y2: box.b, class: mj ? 'g-major' : 'g-minor' }));
+    if (mj) g.append(s('text', { x: p.X(x), y: box.b + 22, 'text-anchor': 'middle', class: 'tick' }, fmt(x)));
+  }
+  for (let i = Math.ceil(dom.y0 / o.ys - 1e-9); i * o.ys <= dom.y1 + 1e-9; i++) {
+    const y = i * o.ys, mj = isMajor(y, o.yl);
+    g.append(s('line', { x1: box.l, x2: box.r, y1: p.Y(y), y2: p.Y(y), class: mj ? 'g-major' : 'g-minor' }));
+    if (mj) g.append(s('text', { x: box.l - 8, y: p.Y(y) + 5, 'text-anchor': 'end', class: 'tick' }, fmt(y)));
+  }
+  g.append(s('rect', { x: box.l, y: box.t, width: box.r - box.l, height: box.b - box.t, class: 'frame' }));
+  if (dom.y0 <= 0 && dom.y1 >= 0) g.append(s('line', { x1: box.l, x2: box.r, y1: p.Y(0), y2: p.Y(0), class: 'axis' }));
+  if (dom.x0 <= 0 && dom.x1 >= 0) g.append(s('line', { x1: p.X(0), x2: p.X(0), y1: box.t, y2: box.b, class: 'axis' }));
+  g.append(s('text', { x: (box.l + box.r) / 2, y: box.b + 46, 'text-anchor': 'middle', class: 'axis-title' }, o.xt));
+  g.append(s('text', { x: 16, y: (box.t + box.b) / 2, 'text-anchor': 'middle', class: 'axis-title', transform: `rotate(-90 16 ${(box.t + box.b) / 2})` }, o.yt));
+  svg.append(g);
+}
+function addClip(svg, id, box) {
+  svg.append(s('defs', {}, s('clipPath', { id }, s('rect', { x: box.l, y: box.t, width: box.r - box.l, height: box.b - box.t }))));
+}
+/** 화면 좌표 → SVG 좌표 */
+function svgPoint(svg, e) {
+  const pt = svg.createSVGPoint(); pt.x = e.clientX; pt.y = e.clientY;
+  return pt.matrixTransform(svg.getScreenCTM().inverse());
+}
+const inBox = (b, q) => q.x >= b.l && q.x <= b.r && q.y >= b.t && q.y <= b.b;
+
+/** 모양 그리기(색에만 의존하지 않도록 군집·범주마다 모양을 다르게) */
+function shapeEl(type, cx, cy, r, attrs) {
+  const poly = pts => s('polygon', Object.assign({ points: pts.map(q => q.join(',')).join(' ') }, attrs));
+  switch (type) {
+    case 'square': return s('rect', Object.assign({ x: cx - r * .85, y: cy - r * .85, width: r * 1.7, height: r * 1.7 }, attrs));
+    case 'triangle': return poly([[cx, cy - r * 1.2], [cx + r * 1.1, cy + r * .8], [cx - r * 1.1, cy + r * .8]]);
+    case 'diamond': return poly([[cx, cy - r * 1.25], [cx + r * 1.1, cy], [cx, cy + r * 1.25], [cx - r * 1.1, cy]]);
+    case 'invtri': return poly([[cx, cy + r * 1.2], [cx + r * 1.1, cy - r * .8], [cx - r * 1.1, cy - r * .8]]);
+    case 'star': {
+      const pts = [];
+      for (let i = 0; i < 10; i++) { const rr = i % 2 ? r * .55 : r * 1.3, an = -Math.PI / 2 + i * Math.PI / 5; pts.push([cx + rr * Math.cos(an), cy + rr * Math.sin(an)]); }
+      return poly(pts);
+    }
+    default: return s('circle', Object.assign({ cx, cy, r }, attrs));
+  }
+}
+
+/* ---------- 내 계산 확인하기(공통) ----------
+   items: [{id, label, get:()=>정답|null, hint:문자열|함수}]
+   소수 둘째 자리 기준 반올림 오차(±0.01)를 허용 */
+function makeChecker(root, items) {
+  root.innerHTML = '';
+  const answerViews = [];
+  items.forEach(it => {
+    const id = 'chk-' + it.id;
+    const input = h('input', { type: 'text', id, inputmode: 'decimal', autocomplete: 'off', placeholder: '예: 0.25' });
+    const fb = h('div', { class: 'fb', 'aria-live': 'polite' });
+    const hintBox = h('div', { class: 'hintbox', hidden: true });
+    const ansBox = h('div', { class: 'ansbox', hidden: true });
+    const hintBtn = h('button', { class: 'btn', type: 'button', hidden: true }, '힌트 보기');
+    const showAns = () => {
+      const a = it.get();
+      ansBox.textContent = (a == null || !isFinite(a)) ? '아직 계산할 수 있는 값이 없어요.'
+        : `정답: ${fmt(a, 4)}  (소수 둘째 자리까지: ${fmt(a, 2)})`;
+    };
+    hintBtn.addEventListener('click', () => {
+      hintBox.textContent = '💡 ' + (typeof it.hint === 'function' ? it.hint() : it.hint);
+      hintBox.hidden = !hintBox.hidden;
+    });
+    const ansBtn = h('button', { class: 'btn', type: 'button' }, '정답 보기');
+    ansBtn.addEventListener('click', () => { showAns(); ansBox.hidden = !ansBox.hidden; ansBtn.textContent = ansBox.hidden ? '정답 보기' : '정답 숨기기'; });
+    const check = () => {
+      const ans = it.get();
+      const v = parseNum(input.value);
+      fb.className = 'fb';
+      if (ans == null || !isFinite(ans)) { fb.textContent = '먼저 실습 영역에서 데이터를 준비해 주세요.'; return; }
+      if (v == null) { fb.textContent = '숫자를 입력해 주세요. (예: 0.7, 7/10)'; fb.classList.add('no'); return; }
+      const ok = Math.abs(v - ans) <= 0.01 + 1e-9 || Math.abs(v - ans) <= Math.abs(ans) * 5e-4;
+      if (ok) { fb.textContent = '✔ 정확해요!'; fb.classList.add('ok'); hintBtn.hidden = true; hintBox.hidden = true; }
+      else { fb.textContent = '✖ 다시 계산해 볼까요? (힌트 보기를 눌러 보세요)'; fb.classList.add('no'); hintBtn.hidden = false; }
+    };
+    const okBtn = h('button', { class: 'btn primary', type: 'button', onclick: check }, '확인');
+    input.addEventListener('keydown', e => { if (e.key === 'Enter') check(); });
+    root.append(h('div', { class: 'chk-row' }, h('label', { for: id }, it.label), input, okBtn, hintBtn, ansBtn, fb, hintBox, ansBox));
+    answerViews.push({ ansBox, showAns, fb });
+  });
+  // 데이터가 바뀌면 열려 있는 정답을 새 값으로 바꾸고 이전 채점 결과는 지움
+  return { update() { answerViews.forEach(v => { if (!v.ansBox.hidden) v.showAns(); if (v.fb.classList.contains('ok') || v.fb.classList.contains('no')) { v.fb.textContent = ''; v.fb.className = 'fb'; } }); } };
+}
+
+/* =========================================================
+   1. 회귀 분석
+   ========================================================= */
+/* ---------- 안전한 일차식 파서 (eval/Function 사용 안 함) ----------
+   식을 ax + b 꼴의 {a, b}로 바꾼다. x² 이나 x로 나누기처럼 직선이 아닌 식은 오류. */
+function parseLine(src) {
+  let t = String(src).trim();
+  if (!t) throw new Error('식을 입력해 주세요. 예: y = 3x − 45');
+  t = t.replace(/[−–—]/g, '-').replace(/[×·∙]/g, '*').replace(/÷/g, '/').replace(/＝/g, '=')
+       .replace(/ŷ/g, 'y').replace(/Y/g, 'y').replace(/X/g, 'x').replace(/²/g, '^2').replace(/³/g, '^3').replace(/\s+/g, '');
+  const parts = t.split('=');
+  if (parts.length > 2) throw new Error('등호(=)는 한 번만 써 주세요.');
+  let rhs = t;
+  if (parts.length === 2) {
+    if (parts[0] !== 'y') throw new Error('“y = …” 꼴로 써 주세요. 등호 왼쪽에는 y만 와야 해요.');
+    rhs = parts[1];
+  }
+  if (!rhs) throw new Error('등호(=) 오른쪽에 식을 써 주세요.');
+  if (rhs.includes('y')) throw new Error('y는 등호 왼쪽에만 써 주세요.');
+  // 토큰 나누기
+  const toks = []; let i = 0;
+  while (i < rhs.length) {
+    const c = rhs[i];
+    const m = rhs.slice(i).match(/^(\d+\.?\d*|\.\d+)/);
+    if (m) { toks.push({ k: 'n', v: parseFloat(m[1]) }); i += m[1].length; continue; }
+    if ('x+-*/^()'.includes(c)) { toks.push({ k: c }); i++; continue; }
+    throw new Error(`‘${c}’는 쓸 수 없는 문자예요. 숫자, x, + − × ÷ ( ) 만 쓸 수 있어요.`);
+  }
+  let pos = 0;
+  const peek = () => toks[pos], take = () => toks[pos++];
+  const lin = (a, b) => ({ a, b });
+  function expr() {
+    let v = term();
+    while (peek() && (peek().k === '+' || peek().k === '-')) {
+      const op = take().k;
+      if (!peek()) throw new Error(`‘${op === '-' ? '−' : '+'}’ 뒤에 숫자나 x가 와야 해요.`);
+      const r = term();
+      v = op === '+' ? lin(v.a + r.a, v.b + r.b) : lin(v.a - r.a, v.b - r.b);
+    }
+    return v;
+  }
+  function mul(p, q) {
+    if (p.a !== 0 && q.a !== 0) throw new Error('x끼리 곱하면 x²가 생겨 직선이 아니에요.');
+    return lin(p.a * q.b + q.a * p.b, p.b * q.b);
+  }
+  function term() {
+    let v = factor();
+    for (;;) {
+      const t2 = peek();
+      if (!t2) break;
+      if (t2.k === '*' || t2.k === '/') {
+        take();
+        if (!peek()) throw new Error(`‘${t2.k === '*' ? '×' : '÷'}’ 뒤에 숫자나 x가 와야 해요.`);
+        const r = factor();
+        if (t2.k === '*') v = mul(v, r);
+        else {
+          if (r.a !== 0) throw new Error('x로 나누면 직선이 아니에요.');
+          if (r.b === 0) throw new Error('0으로 나눌 수 없어요.');
+          v = lin(v.a / r.b, v.b / r.b);
+        }
+      } else if (t2.k === 'n' || t2.k === 'x' || t2.k === '(') {
+        v = mul(v, factor()); // 3x, 2(x+1) 처럼 곱셈 기호 생략
+      } else break;
+    }
+    return v;
+  }
+  function factor() {
+    const t2 = peek();
+    if (t2 && (t2.k === '+' || t2.k === '-')) { take(); const f = factor(); return t2.k === '-' ? lin(-f.a, -f.b) : f; }
+    return power();
+  }
+  function power() {
+    const base = primary();
+    if (peek() && peek().k === '^') {
+      take();
+      const ex = factor();
+      if (ex.a !== 0) throw new Error('지수에는 숫자만 쓸 수 있어요.');
+      if (base.a !== 0) {
+        if (ex.b === 1) return base;
+        throw new Error('x의 거듭제곱(x² 등)이 있으면 직선이 아니에요. 일차식으로 써 주세요.');
+      }
+      return lin(0, Math.pow(base.b, ex.b));
+    }
+    return base;
+  }
+  function primary() {
+    const t2 = take();
+    if (!t2) throw new Error('식이 끝나지 않았어요. 빠진 부분이 없는지 확인해 주세요.');
+    if (t2.k === 'n') return lin(0, t2.v);
+    if (t2.k === 'x') return lin(1, 0);
+    if (t2.k === '(') {
+      if (peek() && peek().k === ')') throw new Error('빈 괄호 ( ) 가 있어요.');
+      const v = expr();
+      if (!peek() || take().k !== ')') throw new Error('괄호가 닫히지 않았어요. ‘)’를 확인해 주세요.');
+      return v;
+    }
+    if (t2.k === ')') throw new Error('여는 괄호 없이 ‘)’가 나왔어요.');
+    throw new Error(`‘${t2.k === '*' ? '×' : t2.k === '/' ? '÷' : t2.k}’의 위치가 이상해요. 앞에 숫자나 x가 있어야 해요.`);
+  }
+  const v = expr();
+  if (pos < toks.length) throw new Error('식의 형태를 다시 확인해 주세요. 예: y = 0.5x + 2');
+  if (!isFinite(v.a) || !isFinite(v.b)) throw new Error('숫자가 너무 커요.');
+  return v;
+}
+/** a, b → "y = 3x − 45" */
+function formatLine(a, b) {
+  const A = fmt(a, 3), B = fmt(Math.abs(b), 3);
+  let ax = '';
+  if (A !== '0') ax = A === '1' ? 'x' : A === '−1' ? '−x' : A + 'x';
+  if (!ax) return 'y = ' + fmt(b, 3);
+  if (B === '0') return 'y = ' + ax;
+  return `y = ${ax} ${b < 0 ? '−' : '+'} ${B}`;
+}
+
+const REG = { pts: [], a: 1, b: 0, drag: -1, captured: false, prevMse: null };
+const REG_BOX = { l: 70, r: 624, t: 16, b: 450 };
+let regPlot = makePlot(REG_BOX, { x0: 0, x1: 50, y0: -10, y1: 70 });
+let regTicks = { xs: 5, xl: 10, ys: 5, yl: 10 };
+/** 1, 2, 5, 10 … 단위의 보기 좋은 눈금 간격 */
+function niceStep(r) { const p = 10 ** Math.floor(Math.log10(r)), m = r / p; return (m <= 1 ? 1 : m <= 2 ? 2 : m <= 5 ? 5 : 10) * p; }
+/** 기본 범위(x 0~50, y −10~70)를 벗어난 점이 있으면 그래프 범위를 넓힌다.
+    점의 값을 범위에 맞춰 자르지 않으므로 표·계산 값이 항상 입력값 그대로 유지됨 */
+function regUpdateDomain() {
+  if (REG.drag >= 0) return; // 점을 끄는 동안에는 범위를 고정
+  const xs = REG.pts.map(q => q[0]), ys = REG.pts.map(q => q[1]);
+  let x0 = Math.min(0, ...xs), x1 = Math.max(50, ...xs), y0 = Math.min(-10, ...ys), y1 = Math.max(70, ...ys);
+  const xl = Math.max(10, niceStep((x1 - x0) / 5)), yl = Math.max(10, niceStep((y1 - y0) / 8));
+  // 기본 범위를 넘을 때는 점과 오차 숫자가 가장자리에 붙지 않도록 반 칸 여유를 둠
+  if (x0 < 0) x0 -= xl / 2; if (x1 > 50) x1 += xl / 2;
+  if (y0 < -10) y0 -= yl / 2; if (y1 > 70) y1 += yl / 2;
+  x0 = Math.floor(x0 / xl) * xl; x1 = Math.ceil(x1 / xl) * xl;
+  y0 = Math.floor(y0 / yl) * yl; y1 = Math.ceil(y1 / yl) * yl;
+  regTicks = { xl, yl, xs: xl / 2, ys: yl / 2 };
+  regPlot = makePlot(REG_BOX, { x0, x1, y0, y1 });
+}
+
+/** 회귀 계산: 각 점의 예측값 ŷ = a·x + b, 오차 = y − ŷ, 오차² 를 구하고
+    평균 제곱 오차 MSE = (오차² 의 합) ÷ n 을 계산한다 */
+function regressionStats(pts, a, b) {
+  const rows = pts.map(([x, y]) => { const yh = a * x + b, e = y - yh; return { x, y, yh, e, e2: e * e }; });
+  const n = rows.length;
+  const sum = rows.reduce((acc, r) => acc + r.e2, 0);
+  return { rows, n, sum, mse: n ? sum / n : null };
+}
+/** 최소 제곱 회귀선: MSE가 가장 작아지는 a, b
+    a = Σ(x−x̄)(y−ȳ) ÷ Σ(x−x̄)², b = ȳ − a·x̄ */
+function leastSquares(pts) {
+  if (pts.length < 2) return null;
+  const xb = avg(pts.map(p => p[0])), yb = avg(pts.map(p => p[1]));
+  let sxx = 0, sxy = 0;
+  pts.forEach(([x, y]) => { sxx += (x - xb) ** 2; sxy += (x - xb) * (y - yb); });
+  if (sxx === 0) return null;
+  const a = sxy / sxx;
+  return { a, b: yb - a * xb };
+}
+
+const regEls = {
+  svg: $('#regSvg'), formula: $('#regFormula'), msg: $('#regFormulaMsg'),
+  a: $('#regA'), b: $('#regB'), an: $('#regAN'), bn: $('#regBN'),
+};
+function setSlider(el, v) {
+  if (v < +el.min) el.min = Math.floor(v);
+  if (v > +el.max) el.max = Math.ceil(v);
+  el.value = v;
+}
+function regSetLine(a, b, source) {
+  REG.a = a; REG.b = b;
+  if (source !== 'formula') { regEls.formula.value = formatLine(a, b); regEls.msg.textContent = ''; }
+  if (source !== 'slider') { setSlider(regEls.a, a); setSlider(regEls.b, b); }
+  if (source !== 'num') { regEls.an.value = +a.toFixed(4); regEls.bn.value = +b.toFixed(4); }
+  renderReg();
+}
+function lineEl(p, a, b, cls) {
+  const { x0, x1 } = p.dom;
+  return s('line', { x1: p.X(x0), y1: p.Y(a * x0 + b), x2: p.X(x1), y2: p.Y(a * x1 + b), class: cls });
+}
+function renderRegPlot(st, ls) {
+  const svg = regEls.svg, p = regPlot;
+  svg.innerHTML = '';
+  addClip(svg, 'regClip', p.box);
+  drawAxes(svg, p, Object.assign({ xt: 'x (독립변수)', yt: 'y (종속변수)' }, regTicks));
+  const gl = s('g', { 'clip-path': 'url(#regClip)' });
+  svg.append(gl);
+  if ($('#regShowLS').checked && ls) gl.append(lineEl(p, ls.a, ls.b, 'ls-line'));
+  gl.append(lineEl(p, REG.a, REG.b, 'my-line'));
+  const showRes = $('#regShowRes').checked, showLbl = $('#regShowLbl').checked;
+  if (showRes) st.rows.forEach(r => gl.append(s('line', { x1: p.X(r.x), x2: p.X(r.x), y1: p.Y(r.y), y2: p.Y(r.yh), class: 'resid' })));
+  st.rows.forEach((r, i) => {
+    const cx = p.X(r.x), cy = p.Y(r.y);
+    const g = s('g', { class: 'pt', 'data-i': i });
+    g.append(s('circle', { cx, cy, r: 18, class: 'hit' }), s('circle', { cx, cy, r: 8, class: 'dot' }));
+    svg.append(g);
+    svg.append(s('text', { x: cx - 12, y: cy - 12, 'text-anchor': 'end', class: 'pt-num halo' }, String(i + 1)));
+    if (showLbl) {
+      const my = clamp((cy + clamp(p.Y(r.yh), p.box.t, p.box.b)) / 2, p.box.t + 14, p.box.b - 6);
+      svg.append(s('text', { x: cx + 12, y: my + 5, class: 'err-lbl halo' }, fmtSigned(r.e)));
+    }
+  });
+}
+function renderRegTable(st) {
+  const tb = $('#regTbody');
+  if (tb.rows.length !== st.n) {
+    tb.innerHTML = '';
+    st.rows.forEach((r, i) => {
+      const mk = j => h('input', {
+        type: 'number', step: 'any', 'aria-label': `${i + 1}번 점 ${j ? 'y' : 'x'}`,
+        oninput: e => { const v = parseFloat(e.target.value); if (isFinite(v)) { REG.pts[i][j] = v; renderReg(); } },
+        onchange: e => { e.target.value = REG.pts[i][j]; },
+      });
+      tb.append(h('tr', {},
+        h('td', {}, String(i + 1)), h('td', {}, mk(0)), h('td', {}, mk(1)),
+        h('td', { class: 'c-yh' }), h('td', { class: 'c-e' }), h('td', { class: 'c-e2' }),
+        h('td', {}, h('button', { class: 'btn tiny', type: 'button', 'aria-label': `${i + 1}번 점 삭제`, onclick: () => { REG.pts.splice(i, 1); renderReg(); } }, '✕'))));
+    });
+  }
+  st.rows.forEach((r, i) => {
+    const tr = tb.rows[i], ins = tr.querySelectorAll('input');
+    if (document.activeElement !== ins[0]) ins[0].value = r.x;
+    if (document.activeElement !== ins[1]) ins[1].value = r.y;
+    tr.querySelector('.c-yh').textContent = fmt(r.yh);
+    tr.querySelector('.c-e').textContent = fmtSigned(r.e);
+    tr.querySelector('.c-e2').textContent = fmt(r.e2);
+  });
+  $('#regSumCell').textContent = fmt(st.sum);
+}
+function renderRegCalc(st, ls) {
+  const box = $('#regCalc');
+  if (!st.n) {
+    box.innerHTML = '<p class="msgbox">좌표평면을 클릭해 점을 찍어 보세요. (또는 “예시 데이터 불러오기”)</p>';
+    $('#regLive').textContent = '—'; $('#regTrend').textContent = ''; $('#regCompare').innerHTML = '';
+    return;
+  }
+  const terms = st.rows.map(r => fmt(r.e2)).join(' + ');
+  box.innerHTML = `
+    <div class="step">내 직선: <b>${formatLine(REG.a, REG.b)}</b></div>
+    <div class="step">① 예측값 ŷ = a·x + b 를 구하고, 오차 = y − ŷ 를 계산해요. (표 참고)</div>
+    <div class="step">② 오차를 제곱해서 모두 더해요: ${terms} = <b>${fmt(st.sum)}</b></div>
+    <div class="step">③ 점의 개수 n = <b>${st.n}</b> 으로 나눠 평균을 내요.</div>
+    <div class="big">MSE = (${terms}) ÷ ${st.n} = <b>${fmt(st.mse)}</b></div>
+    <p class="interp">💡 MSE가 작을수록 예측이 정확해요.</p>
+    <p class="note">표의 값은 소수 둘째 자리까지 반올림해 보여 줘요.</p>`;
+  $('#regLive').textContent = fmt(st.mse);
+  const tr = $('#regTrend');
+  if (REG.prevMse != null && Math.abs(REG.prevMse - st.mse) > 1e-9) tr.textContent = st.mse < REG.prevMse ? '▼ 직전보다 줄었어요' : '▲ 직전보다 늘었어요';
+  REG.prevMse = st.mse;
+  // 최소 제곱 회귀선과 비교
+  const cmp = $('#regCompare');
+  if (!$('#regShowLS').checked) { cmp.innerHTML = '<p class="note">“최소 제곱 회귀선 보기”를 켜면 가장 잘 맞는 직선과 비교할 수 있어요.</p>'; return; }
+  if (!ls) { cmp.innerHTML = '<p class="msgbox">x 값이 서로 다른 점이 2개 이상 있어야 최소 제곱 회귀선을 구할 수 있어요.</p>'; return; }
+  const best = regressionStats(REG.pts, ls.a, ls.b).mse, mine = st.mse;
+  const mx = Math.max(best, mine, 1e-9);
+  const diff = mine - best;
+  cmp.innerHTML = `
+    <h3 class="sub">내 직선 MSE vs 최소 MSE</h3>
+    <div class="step">최소 제곱 회귀선: <b>${formatLine(ls.a, ls.b)}</b></div>
+    <div class="bars">
+      <div class="bar"><span>내 직선</span><div class="track"><div class="fill" style="width:${mine / mx * 100}%;background:#e64980"></div></div><b>${fmt(mine)}</b></div>
+      <div class="bar"><span>최소 MSE</span><div class="track"><div class="fill" style="width:${best / mx * 100}%;background:#1864ab"></div></div><b>${fmt(best)}</b></div>
+    </div>
+    <p class="interp">${diff < 0.005 ? '🎉 최소 제곱 회귀선과 거의 같아요! 더 줄일 수 없어요.' : `내 직선이 최소 MSE보다 ${fmt(diff)} 더 커요. 슬라이더로 더 줄여 볼까요?`}</p>`;
+}
+const regChecker = makeChecker($('#regCheck'), [
+  { id: 'reg-mse', label: '내 직선의 MSE', get: () => regressionStats(REG.pts, REG.a, REG.b).mse,
+    hint: '각 점의 오차(y − ŷ)를 제곱해서 모두 더한 뒤, 점의 개수 n으로 나눠요. ŷ = a·x + b 에 x를 넣어 예측값부터 구해 보세요.' },
+  { id: 'reg-sum', label: '오차² 의 합', get: () => REG.pts.length ? regressionStats(REG.pts, REG.a, REG.b).sum : null,
+    hint: '오차가 음수여도 제곱하면 양수가 돼요. 예: (−2)² = 4' },
+]);
+function renderReg() {
+  regUpdateDomain();
+  const st = regressionStats(REG.pts, REG.a, REG.b);
+  const ls = leastSquares(REG.pts);
+  renderRegPlot(st, ls);
+  renderRegTable(st);
+  renderRegCalc(st, ls);
+  regChecker.update();
+}
+function regLoadExample() {
+  REG.pts = [[20, 17], [24, 25], [28, 39], [32, 49]];
+  REG.prevMse = null;
+  regSetLine(3, -45);
+}
+function regReset() { REG.pts = []; REG.prevMse = null; $('#regShowLS').checked = false; regSetLine(1, 0); }
+
+// 회귀 이벤트
+regEls.formula.addEventListener('input', () => {
+  try { const v = parseLine(regEls.formula.value); regEls.msg.textContent = ''; regSetLine(v.a, v.b, 'formula'); }
+  catch (err) { regEls.msg.textContent = '⚠ ' + err.message; }
+});
+regEls.a.addEventListener('input', () => regSetLine(+regEls.a.value, REG.b, 'slider'));
+regEls.b.addEventListener('input', () => regSetLine(REG.a, +regEls.b.value, 'slider'));
+regEls.an.addEventListener('input', () => { const v = parseFloat(regEls.an.value); if (isFinite(v)) regSetLine(v, REG.b, 'num'); });
+regEls.bn.addEventListener('input', () => { const v = parseFloat(regEls.bn.value); if (isFinite(v)) regSetLine(REG.a, v, 'num'); });
+['#regShowRes', '#regShowLbl', '#regShowLS'].forEach(id => $(id).addEventListener('change', renderReg));
+$('#regReset').addEventListener('click', regReset);
+$('#regExample').addEventListener('click', regLoadExample);
+$('#regAddBtn').addEventListener('click', () => {
+  const x = parseFloat($('#regAddX').value), y = parseFloat($('#regAddY').value);
+  if (!isFinite(x) || !isFinite(y)) { regEls.msg.textContent = '⚠ 추가할 점의 x, y를 숫자로 입력해 주세요.'; return; }
+  REG.pts.push([x, y]); renderReg();
+});
+(function () {
+  const svg = regEls.svg;
+  const toData = e => {
+    const q = svgPoint(svg, e), p = regPlot, d = p.dom;
+    return { q, x: clamp(Math.round(p.iX(q.x)), Math.ceil(d.x0), Math.floor(d.x1)), y: clamp(Math.round(p.iY(q.y)), Math.ceil(d.y0), Math.floor(d.y1)) };
+  };
+  svg.addEventListener('pointerdown', e => {
+    if (e.button !== 0) return;
+    const t = e.target.closest('[data-i]');
+    // 실제로 끌기 시작할 때만 포인터를 잡아야 더블클릭 삭제가 점에 전달됨
+    if (t) { REG.drag = +t.dataset.i; REG.captured = false; e.preventDefault(); return; }
+    const d = toData(e);
+    if (!inBox(regPlot.box, d.q)) return;
+    REG.pts.push([d.x, d.y]); renderReg();
+  });
+  svg.addEventListener('pointermove', e => {
+    if (REG.drag < 0) return;
+    if (!REG.captured) { svg.setPointerCapture(e.pointerId); REG.captured = true; }
+    const d = toData(e), pt = REG.pts[REG.drag];
+    if (pt && (pt[0] !== d.x || pt[1] !== d.y)) { pt[0] = d.x; pt[1] = d.y; renderReg(); }
+  });
+  // 끌기가 끝나면 범위를 다시 계산
+  const end = () => { const was = REG.drag >= 0 && REG.captured; REG.drag = -1; if (was) renderReg(); };
+  svg.addEventListener('pointerup', end); svg.addEventListener('pointercancel', end);
+  const del = e => { const t = e.target.closest('[data-i]'); if (t) { e.preventDefault(); REG.pts.splice(+t.dataset.i, 1); REG.drag = -1; renderReg(); } };
+  svg.addEventListener('dblclick', del);
+  svg.addEventListener('contextmenu', del);
+})();
+
+/* =========================================================
+   2. 분류 분석
+   ========================================================= */
+const CLS_A_EXAMPLE = [
+  { t: '[광고] 오늘만 무료 쿠폰 지급!!', act: '스팸', pred: '스팸' },
+  { t: '내일 수행평가 일정 안내', act: '정상', pred: '정상' },
+  { t: '축하합니다! 경품에 당첨되셨습니다', act: '스팸', pred: '스팸' },
+  { t: '동아리 회의록 공유합니다', act: '정상', pred: '스팸' },
+  { t: '클릭 한 번으로 용돈 벌기', act: '스팸', pred: '정상' },
+  { t: '학부모 상담 주간 안내', act: '정상', pred: '정상' },
+  { t: '초특가 게임 아이템 할인', act: '스팸', pred: '스팸' },
+  { t: '도서관 도서 반납 예정일 알림', act: '정상', pred: '정상' },
+  { t: '지금 바로 비밀번호를 변경하세요(링크)', act: '스팸', pred: '정상' },
+  { t: '체험학습 신청서 제출 안내', act: '정상', pred: '정상' },
+];
+const CLS_B_EXAMPLE = [
+  [7, 2, 'P'], [8, 3, 'P'], [6, 1, 'P'], [9, 4, 'P'], [5, 2, 'P'], [7, 5, 'P'], [8, 1, 'P'], [6, 3, 'P'], [4, 1, 'P'], [9, 6, 'P'], [3, 4, 'P'],
+  [2, 6, 'F'], [3, 8, 'F'], [1, 4, 'F'], [4, 7, 'F'], [2, 2, 'F'], [5, 7, 'F'], [3, 5, 'F'], [6, 8, 'F'], [1, 7, 'F'], [7, 7, 'F'],
+];
+const CLS = { rows: [], marks: [], verify: false, pts: [], m: 0, c: 5, flip: false, best: null };
+const clsPlot = makePlot({ l: 70, r: 604, t: 16, b: 410 }, { x0: 0, x1: 10, y0: 0, y1: 10 });
+const tag = v => v === '스팸' ? '▲ 스팸' : '● 정상';
+
+/** 정확도 = 정확히 예측한 수 ÷ 전체 수 */
+function accuracy(correct, total) { return total ? correct / total : null; }
+/** 실습 A: 실제값과 예측값이 같은 행의 수 */
+const clsATrueCorrect = () => CLS.rows.filter(r => r.act === r.pred).length;
+
+function renderClsATable() {
+  const tb = $('#clsATbody'); tb.innerHTML = '';
+  CLS.rows.forEach((r, i) => {
+    const grp = h('span', { class: 'mark-group', role: 'radiogroup', 'aria-label': `${i + 1}번 채점` });
+    ['O', 'X'].forEach(v => {
+      const inp = h('input', { type: 'radio', name: 'clsmark' + i, value: v, onchange: () => { CLS.marks[i] = v; renderClsA(); } });
+      if (CLS.marks[i] === v) inp.checked = true;
+      grp.append(h('label', {}, inp, h('span', {}, v === 'O' ? 'O 맞음' : 'X 틀림')));
+    });
+    let flag = '';
+    if (CLS.verify && CLS.marks[i]) {
+      const right = (CLS.marks[i] === 'O') === (r.act === r.pred);
+      flag = h('span', { class: 'flag ' + (right ? 'good' : 'bad') }, right ? '✔ 맞게 채점' : '⚠ 다시 보기');
+    } else if (CLS.verify) flag = h('span', { class: 'flag bad' }, '채점 안 함');
+    tb.append(h('tr', {},
+      h('td', {}, String(i + 1)), h('td', { style: 'text-align:left' }, r.t), h('td', {}, tag(r.act)),
+      h('td', {}, h('button', { class: 'pred-btn', type: 'button', title: '눌러서 예측값 바꾸기', 'aria-label': `${i + 1}번 예측값 ${r.pred}, 눌러서 바꾸기`,
+        onclick: () => { r.pred = r.pred === '스팸' ? '정상' : '스팸'; CLS.marks[i] = null; renderClsA(true); } }, tag(r.pred))),
+      h('td', {}, grp), h('td', {}, flag)));
+  });
+}
+function renderClsA(rebuild) {
+  if (rebuild !== false) renderClsATable();
+  const n = CLS.rows.length, o = CLS.marks.filter(m => m === 'O').length, x = CLS.marks.filter(m => m === 'X').length;
+  const left = n - o - x, box = $('#clsACalc');
+  if (!n) { box.innerHTML = '<p class="msgbox">“예시 데이터 불러오기”를 눌러 샘플을 가져오세요.</p>'; clsChecker.update(); return; }
+  const acc = accuracy(o, n);
+  box.innerHTML = `
+    <div class="step">O(맞음) 표시: <b>${o}</b>개 · X(틀림) 표시: <b>${x}</b>개 · 아직 안 함: <b>${left}</b>개</div>
+    <div class="step">전체 수 = <b>${n}</b></div>
+    ${left ? `<p class="msgbox">아직 채점하지 않은 행이 ${left}개 있어요. 모두 채점하면 정확도가 완성돼요.</p>` : ''}
+    <div class="big">정확도 = 정확히 예측한 수 ÷ 전체 수 = ${o} ÷ ${n} = <b>${fmt(acc)}</b></div>
+    <p class="interp">💡 정확도는 1에 가까울수록 예측이 정확해요.${left ? '' : ` (지금 ${fmt(acc)})`}</p>
+    <p class="note">내가 체크한 O/X를 기준으로 실시간 계산해요.</p>`;
+  clsChecker.update();
+}
+function clsPredict(pt) {
+  const below = pt[1] <= CLS.m * pt[0] + CLS.c;
+  return (CLS.flip ? !below : below) ? 'P' : 'F';
+}
+function renderClsB() {
+  const svg = $('#clsSvg'), p = clsPlot; svg.innerHTML = '';
+  addClip(svg, 'clsClip', p.box);
+  drawAxes(svg, p, { xs: 1, ys: 1, xl: 2, yl: 2, xt: '공부 시간 (시간)', yt: '게임 시간 (시간)' });
+  const gl = s('g', { 'clip-path': 'url(#clsClip)' }); svg.insertBefore(gl, svg.lastChild);
+  const { x0, x1 } = p.dom, yA = CLS.m * x0 + CLS.c, yB = CLS.m * x1 + CLS.c;
+  const far = CLS.flip ? 1e4 : -1e4;
+  gl.append(s('polygon', { points: `${p.X(x0)},${p.Y(yA)} ${p.X(x1)},${p.Y(yB)} ${p.X(x1)},${p.Y(far)} ${p.X(x0)},${p.Y(far)}`, fill: '#d0ebff', 'fill-opacity': .75 }));
+  gl.append(s('line', { x1: p.X(x0), y1: p.Y(yA), x2: p.X(x1), y2: p.Y(yB), stroke: '#2b6a2f', 'stroke-width': 4 }));
+  let tp = 0, tn = 0;
+  CLS.pts.forEach((pt, i) => {
+    const cx = p.X(pt[0]), cy = p.Y(pt[1]), ok = clsPredict(pt) === pt[2];
+    if (ok && pt[2] === 'P') tp++; if (ok && pt[2] === 'F') tn++;
+    const g = s('g', { 'data-i': i, class: 'pt' });
+    g.append(s('circle', { cx, cy, r: 16, class: 'hit' }));
+    if (!ok) g.append(s('circle', { cx, cy, r: 14, fill: 'none', stroke: '#b42318', 'stroke-width': 2.5, 'stroke-dasharray': '4 3' }));
+    g.append(pt[2] === 'P' ? shapeEl('circle', cx, cy, 8, { fill: '#1864ab', stroke: '#fff', 'stroke-width': 2 })
+                           : shapeEl('triangle', cx, cy, 9, { fill: '#c2410c', stroke: '#fff', 'stroke-width': 2 }));
+    svg.append(g);
+    svg.append(s('text', { x: cx + 12, y: cy - 8, class: 'halo', 'font-size': 17, 'font-weight': 900, fill: ok ? '#1b6e2f' : '#b42318', 'pointer-events': 'none' }, ok ? 'O' : 'X'));
+  });
+  const n = CLS.pts.length, cor = tp + tn, acc = accuracy(cor, n);
+  if (n && (CLS.best == null || acc > CLS.best)) CLS.best = acc;
+  const side = CLS.flip ? '위쪽' : '아래쪽';
+  const cTxt = CLS.c < 0 ? ` − ${fmt(-CLS.c, 1)}` : ` + ${fmt(CLS.c, 1)}`;
+  $('#clsLineText').textContent = `기준선: 게임 시간 = ${fmt(CLS.m, 1)} × 공부 시간${cTxt}  (기준선 ${side} → 합격 예측)`;
+  const box = $('#clsBCalc');
+  if (!n) { box.innerHTML = '<p class="msgbox">점이 없어요. 산점도를 클릭해 점을 추가하거나 예시 데이터를 불러오세요.</p>'; clsChecker.update(); return; }
+  box.innerHTML = `
+    <div class="step">● 합격을 합격으로 맞힘: <b>${tp}</b>개</div>
+    <div class="step">▲ 불합격을 불합격으로 맞힘: <b>${tn}</b>개</div>
+    <div class="step">틀린 점(X): <b>${n - cor}</b>개 · 전체: <b>${n}</b>개</div>
+    <div class="step">정확히 예측한 수 = ${tp} + ${tn} = <b>${cor}</b></div>
+    <div class="big">정확도 = 정확히 예측한 수 ÷ 전체 수 = ${cor} ÷ ${n} = <b>${fmt(acc)}</b></div>
+    <p class="interp">💡 정확도는 1에 가까울수록 예측이 정확해요.</p>
+    <p class="note">지금까지 찾은 최고 정확도: <b>${fmt(CLS.best)}</b></p>`;
+  clsChecker.update();
+}
+const clsChecker = makeChecker($('#clsCheck'), [
+  { id: 'cls-a', label: '실습 A 모델의 정확도', get: () => accuracy(clsATrueCorrect(), CLS.rows.length),
+    hint: '실제값과 예측값이 같은 행의 개수를 세고, 전체 행의 수로 나눠요.' },
+  { id: 'cls-b', label: '실습 B 기준선의 정확도', get: () => CLS.pts.length ? accuracy(CLS.pts.filter(pt => clsPredict(pt) === pt[2]).length, CLS.pts.length) : null,
+    hint: '산점도에서 O 표시가 붙은 점의 개수를 세어 전체 점의 수로 나눠요.' },
+]);
+function clsSetLine(m, c, src) {
+  CLS.m = m; CLS.c = c;
+  if (src !== 'slider') { setSlider($('#clsM'), m); setSlider($('#clsC'), c); }
+  if (src !== 'num') { $('#clsMN').value = +m.toFixed(3); $('#clsCN').value = +c.toFixed(3); }
+  renderClsB();
+}
+function clsLoadExample() {
+  CLS.rows = CLS_A_EXAMPLE.map(r => Object.assign({}, r));
+  CLS.marks = CLS.rows.map(() => null); CLS.verify = false; $('#clsAVerifyMsg').textContent = '';
+  CLS.pts = CLS_B_EXAMPLE.map(p => p.slice()); CLS.best = null; CLS.flip = false; $('#clsFlip').checked = false;
+  renderClsA(); clsSetLine(0, 5);
+}
+function clsReset() {
+  CLS.rows = CLS_A_EXAMPLE.map(r => Object.assign({}, r));
+  CLS.marks = CLS.rows.map(() => null); CLS.verify = false; $('#clsAVerifyMsg').textContent = '';
+  CLS.pts = []; CLS.best = null; CLS.flip = false; $('#clsFlip').checked = false;
+  renderClsA(); clsSetLine(0, 5);
+}
+$('#clsAVerify').addEventListener('click', () => {
+  CLS.verify = true;
+  const marked = CLS.marks.filter(Boolean).length;
+  const wrong = CLS.rows.filter((r, i) => CLS.marks[i] && ((CLS.marks[i] === 'O') !== (r.act === r.pred))).length;
+  $('#clsAVerifyMsg').textContent = !marked ? '먼저 O/X를 체크해 주세요.' : wrong ? `잘못 채점한 행이 ${wrong}개 있어요. ⚠ 표시를 확인하세요.` : `체크한 ${marked}개 모두 맞게 채점했어요!`;
+  renderClsA();
+});
+$('#clsAClear').addEventListener('click', () => { CLS.marks = CLS.rows.map(() => null); CLS.verify = false; $('#clsAVerifyMsg').textContent = ''; renderClsA(); });
+$('#clsM').addEventListener('input', e => clsSetLine(+e.target.value, CLS.c, 'slider'));
+$('#clsC').addEventListener('input', e => clsSetLine(CLS.m, +e.target.value, 'slider'));
+$('#clsMN').addEventListener('input', e => { const v = parseFloat(e.target.value); if (isFinite(v)) clsSetLine(v, CLS.c, 'num'); });
+$('#clsCN').addEventListener('input', e => { const v = parseFloat(e.target.value); if (isFinite(v)) clsSetLine(CLS.m, v, 'num'); });
+$('#clsFlip').addEventListener('change', e => { CLS.flip = e.target.checked; renderClsB(); });
+$('#clsReset').addEventListener('click', clsReset);
+$('#clsExample').addEventListener('click', clsLoadExample);
+(function () {
+  const svg = $('#clsSvg'), p = clsPlot;
+  svg.addEventListener('pointerdown', e => {
+    if (e.button !== 0 || e.target.closest('[data-i]')) return;
+    const q = svgPoint(svg, e); if (!inBox(p.box, q)) return;
+    CLS.pts.push([clamp(Math.round(p.iX(q.x) * 2) / 2, 0, 10), clamp(Math.round(p.iY(q.y) * 2) / 2, 0, 10), $('#clsAddType').value]);
+    renderClsB();
+  });
+  const del = e => { const t = e.target.closest('[data-i]'); if (t) { e.preventDefault(); CLS.pts.splice(+t.dataset.i, 1); renderClsB(); } };
+  svg.addEventListener('dblclick', del); svg.addEventListener('contextmenu', del);
+})();
+(function () { // 심화: 불량품 그리드
+  const g = $('#defectGrid'), bad = new Set([7, 23, 48, 66, 91]);
+  for (let i = 0; i < 100; i++) g.append(h('span', { class: bad.has(i) ? 'bad' : '', 'aria-hidden': 'true' }, bad.has(i) ? '▲' : '●'));
+})();
+
+/* =========================================================
+   3. 군집 분석
+   ========================================================= */
+const CLU_COLORS = ['#c2255c', '#1864ab', '#2b8a3e', '#d9480f', '#6741d9', '#0b7285'];
+const CLU_SHAPES = ['circle', 'square', 'triangle', 'diamond', 'star', 'invtri'];
+const CLU_SYMBOL = ['●', '■', '▲', '◆', '★', '▼'];
+const CLU = { pts: [], k: 3, cents: null, labels: null, next: 'init', done: false, iter: 0, sel: -1, msg: '' };
+const cluPlot = makePlot({ l: 56, r: 544, t: 14, b: 470 }, { x0: 0, x1: 100, y0: 0, y1: 100 });
+
+function cluDataset(name) {
+  const r = makeRng(name === 'three' ? 11 : name === 'two' ? 22 : 33), out = [];
+  const blob = (cx, cy, sd, n) => { for (let i = 0; i < n; i++) out.push([clamp(Math.round(cx + gauss(r) * sd), 3, 97), clamp(Math.round(cy + gauss(r) * sd), 3, 97)]); };
+  if (name === 'three') { blob(22, 25, 6, 8); blob(76, 30, 6, 8); blob(50, 78, 6, 8); }
+  else if (name === 'two') { blob(28, 38, 8, 10); blob(72, 66, 8, 10); }
+  else { blob(42, 45, 14, 9); blob(60, 56, 14, 9); blob(50, 40, 16, 6); }
+  return out;
+}
+const dist = (p, q) => Math.hypot(p[0] - q[0], p[1] - q[1]);
+const nearestCent = (p, cents) => { let bi = 0, bd = Infinity; cents.forEach((c, i) => { const d = dist(p, c); if (d < bd) { bd = d; bi = i; } }); return bi; };
+/** k-평균 ② 점 배정: 각 점을 가장 가까운 중심의 군집으로 */
+const kmAssign = (pts, cents) => pts.map(p => nearestCent(p, cents));
+/** k-평균 ③ 중심 이동: 각 군집 점들의 평균 위치로 (빈 군집은 그대로) */
+function kmMove(pts, labels, cents) {
+  return cents.map((c, j) => {
+    const mem = pts.filter((_, i) => labels[i] === j);
+    return mem.length ? [avg(mem.map(p => p[0])), avg(mem.map(p => p[1]))] : c.slice();
+  });
+}
+function initRandom(pts, k, rnd = Math.random) {
+  const idx = [...pts.keys()];
+  for (let i = idx.length - 1; i > 0; i--) { const j = Math.floor(rnd() * (i + 1)); [idx[i], idx[j]] = [idx[j], idx[i]]; }
+  return idx.slice(0, k).map(i => pts[i].slice());
+}
+/** 비교 그래프용: 여러 번 실행해서 가장 좋은(관성이 작은) 결과 사용 */
+function kmeansBest(pts, k, seed, restarts = 15) {
+  const r = makeRng(seed); let best = null;
+  for (let t = 0; t < restarts; t++) {
+    let cents = initRandom(pts, k, r), labels = null;
+    for (let it = 0; it < 100; it++) {
+      const nl = kmAssign(pts, cents);
+      if (labels && nl.every((l, i) => l === labels[i])) break;
+      labels = nl; cents = kmMove(pts, labels, cents);
+    }
+    const inertia = pts.reduce((acc, p, i) => acc + dist(p, cents[labels[i]]) ** 2, 0);
+    if (!best || inertia < best.inertia) best = { labels, inertia };
+  }
+  return best.labels;
+}
+
+/** 실루엣 계수 계산
+    aᵢ = 같은 군집 안 다른 점까지의 평균 거리
+    bᵢ = 가장 가까운 다른 군집(평균 거리가 가장 작은 군집) 점들까지의 평균 거리
+    Sᵢ = (bᵢ − aᵢ) ÷ max(aᵢ, bᵢ),  군집에 점이 1개뿐이면 Sᵢ = 0
+    전체 실루엣 계수 = 모든 Sᵢ 의 평균 */
+function silhouette(pts, labels) {
+  const ids = [...new Set(labels)].sort((a, b) => a - b);
+  if (ids.length < 2) return null;
+  const per = pts.map((p, i) => {
+    const L = labels[i], same = [], others = {};
+    pts.forEach((q, j) => {
+      if (j === i) return;
+      const d = dist(p, q);
+      if (labels[j] === L) same.push({ j, d }); else (others[labels[j]] = others[labels[j]] || []).push({ j, d });
+    });
+    const otherMeans = Object.keys(others).map(c => ({ c: +c, arr: others[c], mean: avg(others[c].map(o => o.d)) })).sort((x, y) => x.mean - y.mean);
+    const near = otherMeans[0];
+    if (!same.length) return { i, a: 0, b: near.mean, s: 0, same, near, otherMeans, single: true };
+    const a = avg(same.map(o => o.d)), b = near.mean, m = Math.max(a, b);
+    return { i, a, b, s: m === 0 ? 0 : (b - a) / m, same, near, otherMeans, single: false };
+  });
+  const perCluster = {};
+  ids.forEach(c => { perCluster[c] = avg(per.filter(r => labels[r.i] === c).map(r => r.s)); });
+  return { per, mean: avg(per.map(r => r.s)), perCluster, ids };
+}
+/** 실루엣 한 점: Sᵢ = (bᵢ − aᵢ) ÷ max(aᵢ, bᵢ) */
+const silOne = (a, b) => { const m = Math.max(a, b); return m === 0 ? 0 : (b - a) / m; };
+function silInterp(v) {
+  if (v >= 0.7) return '군집이 아주 뚜렷하게 잘 나뉘었어요. (0.7 이상: 강한 구조)';
+  if (v >= 0.5) return '군집이 적절하게 잘 나뉘었어요. (0.5 ~ 0.7: 합리적인 구조)';
+  if (v >= 0.25) return '군집이 약하게 나뉘었어요. 겹치는 부분이 있어요. (0.25 ~ 0.5: 약한 구조)';
+  return '군집 구조가 거의 보이지 않아요. 다른 k를 시도해 보세요. (0.25 미만)';
+}
+
+function cluResetRun(msg) { CLU.cents = null; CLU.labels = null; CLU.next = 'init'; CLU.done = false; CLU.iter = 0; CLU.msg = msg || ''; }
+function cluEnough() {
+  if (CLU.pts.length < CLU.k) { CLU.msg = `⚠ 점이 ${CLU.pts.length}개뿐이에요. 군집 수 k(=${CLU.k})보다 점이 많거나 같아야 군집을 만들 수 있어요.`; return false; }
+  return true;
+}
+function cluStep() {
+  if (!cluEnough()) return renderClu();
+  if (!CLU.cents) {
+    CLU.cents = initRandom(CLU.pts, CLU.k); CLU.labels = null; CLU.next = 'assign'; CLU.iter = 0; CLU.done = false;
+    CLU.msg = `① 중심 초기화: 데이터 중에서 무작위로 중심 ${CLU.k}개(✚)를 골랐어요.`;
+  } else if (CLU.done) {
+    CLU.msg = '이미 완성되었어요. 다른 결과를 보려면 “초기 중심 다시 뽑기”를 눌러 보세요.';
+  } else if (CLU.next === 'assign') {
+    const nl = kmAssign(CLU.pts, CLU.cents), first = !CLU.labels;
+    const changed = first ? nl.length : nl.filter((l, i) => l !== CLU.labels[i]).length;
+    CLU.labels = nl; CLU.iter++;
+    if (!first && changed === 0) { CLU.done = true; CLU.msg = `② 점 배정: 바뀐 점이 없어요 → 군집 완성! (배정 ${CLU.iter}번)`; }
+    else { CLU.next = 'move'; CLU.msg = `② 점 배정: 각 점을 가장 가까운 중심의 군집에 넣었어요. (바뀐 점 ${changed}개)`; }
+  } else {
+    CLU.cents = kmMove(CLU.pts, CLU.labels, CLU.cents); CLU.next = 'assign';
+    CLU.msg = '③ 중심 이동: 각 군집에 속한 점들의 평균 위치로 중심을 옮겼어요.';
+  }
+  renderClu();
+}
+function cluRunAll() {
+  if (!cluEnough()) return renderClu();
+  for (let i = 0; i < 500 && !CLU.done; i++) cluStepSilent();
+  CLU.msg = `끝까지 실행: 배정이 더 이상 바뀌지 않을 때까지 반복했어요. (배정 ${CLU.iter}번)`;
+  renderClu();
+}
+function cluStepSilent() {
+  if (!CLU.cents) { CLU.cents = initRandom(CLU.pts, CLU.k); CLU.next = 'assign'; CLU.iter = 0; return; }
+  if (CLU.next === 'assign') {
+    const nl = kmAssign(CLU.pts, CLU.cents), first = !CLU.labels;
+    const changed = first ? 1 : nl.filter((l, i) => l !== CLU.labels[i]).length;
+    CLU.labels = nl; CLU.iter++;
+    if (!first && changed === 0) CLU.done = true; else CLU.next = 'move';
+  } else { CLU.cents = kmMove(CLU.pts, CLU.labels, CLU.cents); CLU.next = 'assign'; }
+}
+function cluReinit() {
+  if (!cluEnough()) return renderClu();
+  CLU.cents = initRandom(CLU.pts, CLU.k); CLU.labels = null; CLU.next = 'assign'; CLU.done = false; CLU.iter = 0;
+  CLU.msg = `① 초기 중심을 다시 뽑았어요. “한 단계씩 실행”으로 점을 배정해 보세요.`;
+  renderClu();
+}
+function renderCluPlot(sil) {
+  const svg = $('#cluSvg'), p = cluPlot; svg.innerHTML = '';
+  drawAxes(svg, p, { xs: 5, ys: 5, xl: 20, yl: 20, xt: '특성 1', yt: '특성 2' });
+  const selInfo = sil && CLU.sel >= 0 ? sil.per[CLU.sel] : null, lbl = $('#cluDistLbl').checked;
+  if (selInfo) {
+    const sp = CLU.pts[CLU.sel], col = CLU_COLORS[CLU.labels[CLU.sel]];
+    const drawL = (o, cls, color) => {
+      const q = CLU.pts[o.j];
+      svg.append(s('line', { x1: p.X(sp[0]), y1: p.Y(sp[1]), x2: p.X(q[0]), y2: p.Y(q[1]), class: cls, stroke: color }));
+      if (lbl) svg.append(s('text', { x: (p.X(sp[0]) + p.X(q[0])) / 2, y: (p.Y(sp[1]) + p.Y(q[1])) / 2, class: 'dist-lbl halo', 'text-anchor': 'middle', fill: color }, fmt(o.d, 1)));
+    };
+    selInfo.near.arr.forEach(o => drawL(o, 'sil-other', '#343a40'));
+    selInfo.same.forEach(o => drawL(o, 'sil-same', col));
+  }
+  CLU.pts.forEach((pt, i) => {
+    const cx = p.X(pt[0]), cy = p.Y(pt[1]), L = CLU.labels ? CLU.labels[i] : -1;
+    const g = s('g', { 'data-i': i, class: 'pt' });
+    g.append(s('circle', { cx, cy, r: 14, class: 'hit' }));
+    if (i === CLU.sel) g.append(s('circle', { cx, cy, r: 15, fill: '#fff3bf', stroke: '#1f2330', 'stroke-width': 3 }));
+    g.append(L < 0 ? s('circle', { cx, cy, r: 7, fill: '#fff', stroke: '#495057', 'stroke-width': 2.5 })
+                   : shapeEl(CLU_SHAPES[L], cx, cy, 8, { fill: CLU_COLORS[L], stroke: '#fff', 'stroke-width': 1.8 }));
+    svg.append(g);
+  });
+  if (CLU.cents) CLU.cents.forEach((c, j) => {
+    const cx = p.X(c[0]), cy = p.Y(c[1]);
+    svg.append(s('path', { d: `M${cx - 13} ${cy}H${cx + 13}M${cx} ${cy - 13}V${cy + 13}`, stroke: '#fff', 'stroke-width': 9, 'stroke-linecap': 'round', 'pointer-events': 'none' }));
+    svg.append(s('path', { d: `M${cx - 12} ${cy}H${cx + 12}M${cx} ${cy - 12}V${cy + 12}`, stroke: CLU_COLORS[j], 'stroke-width': 5, 'stroke-linecap': 'round', 'pointer-events': 'none' }));
+    svg.append(s('text', { x: cx + 14, y: cy - 10, class: 'dist-lbl halo', fill: CLU_COLORS[j] }, `중심${j + 1}`));
+  });
+}
+function renderCluCalc(sil) {
+  const box = $('#cluCalc');
+  if (!CLU.labels) { box.innerHTML = '<p class="msgbox">먼저 “한 단계씩 실행” 또는 “끝까지 실행”으로 군집을 만들어 주세요.</p>'; return; }
+  if (!sil) { box.innerHTML = '<p class="msgbox">점이 들어 있는 군집이 2개 이상이어야 실루엣 계수를 계산할 수 있어요.</p>'; return; }
+  const name = c => `군집 ${c + 1} ${CLU_SYMBOL[c]}`;
+  let html = `<div class="big">전체 평균 실루엣 계수 = <b>${fmt(sil.mean)}</b></div>
+    <p class="interp">💡 ${silInterp(sil.mean)}<br><span class="small">1에 가까울수록 군집이 잘 형성됨</span></p>
+    ${CLU.done ? '' : '<p class="note">아직 k-평균이 진행 중이에요. 끝까지 실행하면 값이 바뀔 수 있어요.</p>'}
+    <h3 class="sub">군집별 평균</h3>` +
+    sil.ids.map(c => `<div class="step"><span style="color:${CLU_COLORS[c]};font-weight:900">${name(c)}</span> (${CLU.labels.filter(l => l === c).length}개): 평균 Sᵢ = <b>${fmt(sil.perCluster[c])}</b></div>`).join('');
+  const r = CLU.sel >= 0 ? sil.per[CLU.sel] : null;
+  if (!r) html += '<h3 class="sub">한 점의 실루엣</h3><p class="msgbox">그래프에서 점 하나를 클릭(또는 “선택한 점” 목록에서 선택)하면 aᵢ, bᵢ, Sᵢ 계산 과정이 나와요.</p>';
+  else {
+    const L = CLU.labels[r.i], pt = CLU.pts[r.i];
+    const list = arr => arr.length > 8 ? arr.slice(0, 8).map(o => fmt(o.d)).join(' + ') + ' + …' : arr.map(o => fmt(o.d)).join(' + ');
+    html += `<h3 class="sub">선택한 점 ${r.i + 1} (${pt[0]}, ${pt[1]}) · ${name(L)}</h3>`;
+    if (r.single) html += `<div class="step">이 점은 군집에 혼자 있어요. 같은 군집 점이 없으므로 <b>Sᵢ = 0</b> 으로 처리해요.</div>`;
+    else html += `<div class="step">aᵢ = 같은 군집 다른 점 ${r.same.length}개까지 평균 거리<br>= (${list(r.same)}) ÷ ${r.same.length} = <b>${fmt(r.a)}</b></div>`;
+    html += r.otherMeans.map(o => `<div class="step small">${name(o.c)} 점들까지 평균 거리 = ${fmt(o.mean)}${o === r.near ? ' ← 가장 가까운 다른 군집' : ''}</div>`).join('');
+    html += `<div class="step">bᵢ = 가장 가까운 다른 군집(${name(r.near.c)}) 점 ${r.near.arr.length}개까지 평균 거리<br>= (${list(r.near.arr)}) ÷ ${r.near.arr.length} = <b>${fmt(r.b)}</b></div>`;
+    if (!r.single) html += `<div class="big">Sᵢ = (bᵢ − aᵢ) ÷ max(aᵢ, bᵢ) = (${fmt(r.b)} − ${fmt(r.a)}) ÷ max(${fmt(r.a)}, ${fmt(r.b)}) = <b>${fmt(r.s)}</b></div>`;
+    else html += `<div class="big">Sᵢ = <b>0</b></div>`;
+    html += '<p class="note">그래프의 색 점선은 같은 군집까지의 거리, 검은 점선은 가장 가까운 다른 군집까지의 거리예요.</p>';
+  }
+  box.innerHTML = html;
+}
+let cluChartCache = { key: '', vals: null };
+function renderCluChart() {
+  const svg = $('#cluChart'); svg.innerHTML = '';
+  const key = JSON.stringify(CLU.pts);
+  if (cluChartCache.key !== key) {
+    const vals = [];
+    for (let k = 2; k <= 6; k++) {
+      if (CLU.pts.length <= k) { vals.push(null); continue; }
+      const sil = silhouette(CLU.pts, kmeansBest(CLU.pts, k, 100 + k));
+      vals.push(sil ? sil.mean : null);
+    }
+    cluChartCache = { key, vals };
+  }
+  const vals = cluChartCache.vals;
+  const box = { l: 50, r: 505, t: 18, b: 240 };
+  const lo = Math.min(0, ...vals.filter(v => v != null)), Y = v => box.b - (v - lo) / (1 - lo) * (box.b - box.t);
+  [0, 0.25, 0.5, 0.75, 1].concat(lo < 0 ? [lo] : []).forEach(v => {
+    svg.append(s('line', { x1: box.l, x2: box.r, y1: Y(v), y2: Y(v), class: v === 0 ? 'axis' : 'g-major' }));
+    svg.append(s('text', { x: box.l - 6, y: Y(v) + 5, 'text-anchor': 'end', class: 'tick' }, fmt(v)));
+  });
+  let bi = -1; vals.forEach((v, i) => { if (v != null && (bi < 0 || v > vals[bi] + 1e-12)) bi = i; });
+  const bw = (box.r - box.l) / 5, linePts = [];
+  vals.forEach((v, i) => {
+    const k = i + 2, cx = box.l + bw * (i + .5);
+    svg.append(s('text', { x: cx, y: box.b + 22, 'text-anchor': 'middle', class: 'tick', 'font-weight': k === CLU.k ? 900 : 400 }, `k=${k}`));
+    if (v == null) { svg.append(s('text', { x: cx, y: box.b - 10, 'text-anchor': 'middle', class: 'tick' }, '점 부족')); return; }
+    const best = i === bi;
+    svg.append(s('rect', { x: cx - bw * .32, width: bw * .64, y: Math.min(Y(v), Y(0)), height: Math.abs(Y(v) - Y(0)),
+      fill: best ? '#5f3dc4' : '#c5b6f5', stroke: k === CLU.k ? '#1f2330' : 'none', 'stroke-width': 3, rx: 6 }));
+    svg.append(s('text', { x: cx, y: Y(Math.max(v, 0)) - 8, 'text-anchor': 'middle', 'font-size': 15, 'font-weight': 800, fill: '#1f2330' }, (best ? '★ ' : '') + fmt(v)));
+    linePts.push([cx, Y(v)]);
+  });
+  if (linePts.length > 1) svg.append(s('polyline', { points: linePts.map(q => q.join(',')).join(' '), fill: 'none', stroke: '#e8590c', 'stroke-width': 2.5 }));
+  linePts.forEach(q => svg.append(s('circle', { cx: q[0], cy: q[1], r: 4, fill: '#e8590c' })));
+  $('#cluChartNote').textContent = bi >= 0
+    ? `★ 가장 높은 값: k = ${bi + 2} (평균 실루엣 계수 ${fmt(vals[bi])}). 1에 가까울수록 군집이 잘 형성됨. 굵은 테두리 = 지금 고른 k. (각 k마다 15번 실행해 가장 좋은 결과로 계산)`
+    : '점이 부족해 비교할 수 없어요.';
+}
+function renderClu() {
+  const sil = CLU.labels ? silhouette(CLU.pts, CLU.labels) : null;
+  if (CLU.sel >= CLU.pts.length) CLU.sel = -1;
+  // 진행 단계 표시
+  const ph = $('#cluPhase'), steps = [['init', '① 중심 초기화'], ['assign', '② 점 배정'], ['move', '③ 중심 이동']];
+  ph.innerHTML = '';
+  steps.forEach(([k, t]) => {
+    const on = !CLU.done && ((k === 'init' && !CLU.cents) || (CLU.cents && CLU.next === k));
+    ph.append(h('span', { class: on ? 'on' : CLU.done ? 'done' : '', 'aria-current': on ? 'step' : null }, (on ? '다음: ' : '') + t));
+  });
+  if (CLU.done) ph.append(h('span', { class: 'done' }, '✔ 완성'));
+  const mb = $('#cluMsg');
+  mb.textContent = CLU.msg || (CLU.pts.length ? '“한 단계씩 실행”을 눌러 k-평균을 시작해 보세요.' : '예시 데이터를 불러오거나 그래프를 클릭해 점을 찍어 보세요.');
+  mb.className = 'msgbox' + (CLU.msg.startsWith('⚠') ? ' warn' : '');
+  renderCluPlot(sil);
+  renderCluCalc(sil);
+  // 범례
+  const lg = $('#cluLegend'); lg.innerHTML = '';
+  if (CLU.labels) for (let j = 0; j < CLU.k; j++) {
+    const cnt = CLU.labels.filter(l => l === j).length;
+    lg.append(h('span', { class: 'chip' }, h('span', { style: `color:${CLU_COLORS[j]};font-size:1.2em` }, CLU_SYMBOL[j]), `군집 ${j + 1}: ${cnt}개` + (sil && sil.perCluster[j] != null ? ` · 평균 Sᵢ ${fmt(sil.perCluster[j])}` : '')));
+  }
+  // 선택 목록
+  const sel = $('#cluSel'); sel.innerHTML = '';
+  sel.append(h('option', { value: -1 }, '(선택 안 함)'));
+  CLU.pts.forEach((pt, i) => sel.append(h('option', { value: i }, `점 ${i + 1} (${pt[0]}, ${pt[1]})${CLU.labels ? ' · 군집 ' + (CLU.labels[i] + 1) : ''}`)));
+  sel.value = CLU.sel;
+  renderCluChart();
+  cluChecker.update();
+}
+function renderSilPractice() {
+  const a = parseFloat($('#silA').value), b = parseFloat($('#silB').value), out = $('#silOut');
+  if (!isFinite(a) || !isFinite(b) || a < 0 || b < 0) { out.textContent = 'aᵢ, bᵢ에 0 이상의 숫자를 넣어 주세요.'; return; }
+  out.innerHTML = `Sᵢ = (${fmt(b)} − ${fmt(a)}) ÷ max(${fmt(a)}, ${fmt(b)}) = ${fmt(b - a)} ÷ ${fmt(Math.max(a, b))} = <b>${fmt(silOne(a, b))}</b>`;
+}
+const cluChecker = makeChecker($('#cluCheck'), [
+  { id: 'clu-si', label: '선택한 점의 Sᵢ', get: () => { const sil = CLU.labels && silhouette(CLU.pts, CLU.labels); return sil && CLU.sel >= 0 ? sil.per[CLU.sel].s : null; },
+    hint: '먼저 aᵢ(같은 군집 평균 거리)와 bᵢ(가장 가까운 다른 군집 평균 거리)를 구한 뒤, (bᵢ − aᵢ) ÷ max(aᵢ, bᵢ)를 계산해요. 점을 선택해야 해요.' },
+  { id: 'clu-mean', label: '전체 평균 실루엣 계수', get: () => { const sil = CLU.labels && silhouette(CLU.pts, CLU.labels); return sil ? sil.mean : null; },
+    hint: '모든 점의 Sᵢ를 더한 뒤 점의 개수로 나눠요.' },
+  { id: 'clu-prac', label: '연습: aᵢ, bᵢ 칸 값의 Sᵢ', get: () => { const a = parseFloat($('#silA').value), b = parseFloat($('#silB').value); return isFinite(a) && isFinite(b) ? silOne(a, b) : null; },
+    hint: '분자는 bᵢ − aᵢ, 분모는 aᵢ와 bᵢ 중 큰 값이에요.' },
+]);
+function cluSetK(k) {
+  k = clamp(Math.round(k) || 2, 2, 6);
+  CLU.k = k; $('#cluK').value = k; $('#cluKN').value = k;
+  cluResetRun(CLU.pts.length < k ? '' : `k = ${k}로 바꿨어요. 다시 실행해 보세요.`);
+  cluEnough(); renderClu();
+}
+function cluLoad(name) { CLU.pts = cluDataset(name); CLU.sel = -1; cluResetRun(); renderClu(); }
+$('#cluK').addEventListener('input', e => cluSetK(+e.target.value));
+$('#cluKN').addEventListener('change', e => cluSetK(+e.target.value));
+$('#cluStep').addEventListener('click', cluStep);
+$('#cluRun').addEventListener('click', cluRunAll);
+$('#cluReinit').addEventListener('click', cluReinit);
+$('#cluLoad').addEventListener('click', () => cluLoad($('#cluDataset').value));
+$('#cluExample').addEventListener('click', () => cluLoad($('#cluDataset').value));
+$('#cluReset').addEventListener('click', () => { CLU.pts = []; CLU.sel = -1; cluResetRun(); renderClu(); });
+$('#cluDistLbl').addEventListener('change', renderClu);
+$('#cluSel').addEventListener('change', e => { CLU.sel = +e.target.value; renderClu(); });
+$('#silA').addEventListener('input', () => { renderSilPractice(); cluChecker.update(); });
+$('#silB').addEventListener('input', () => { renderSilPractice(); cluChecker.update(); });
+(function () {
+  const svg = $('#cluSvg'), p = cluPlot;
+  svg.addEventListener('pointerdown', e => {
+    if (e.button !== 0) return;
+    const t = e.target.closest('[data-i]');
+    if (t) { const i = +t.dataset.i; CLU.sel = CLU.sel === i ? -1 : i; renderClu(); return; }
+    if (!$('#cluAddMode').checked) return;
+    const q = svgPoint(svg, e); if (!inBox(p.box, q)) return;
+    CLU.pts.push([clamp(Math.round(p.iX(q.x)), 0, 100), clamp(Math.round(p.iY(q.y)), 0, 100)]);
+    cluResetRun('점이 바뀌었어요. 다시 실행해서 군집을 만들어 보세요.'); renderClu();
+  });
+  const del = e => {
+    const t = e.target.closest('[data-i]'); if (!t) return;
+    e.preventDefault(); CLU.pts.splice(+t.dataset.i, 1); CLU.sel = -1;
+    cluResetRun('점을 지웠어요. 다시 실행해서 군집을 만들어 보세요.'); renderClu();
+  };
+  svg.addEventListener('dblclick', del); svg.addEventListener('contextmenu', del);
+})();
+
+/* =========================================================
+   4. 연관 분석
+   ========================================================= */
+const ITEMS = ['빵', '우유', '라면', '김밥', '우산', '장화', '콜라', '과자'];
+const ASC_EXAMPLE = [
+  ['빵', '우유'], ['빵', '우유', '과자'], ['라면', '김밥'], ['우산', '장화'], ['빵', '우유'],
+  ['라면', '김밥', '콜라'], ['우산', '장화'], ['빵', '과자'], ['콜라', '과자'], ['라면', '콜라'],
+  ['우산'], ['빵', '우유', '라면'], ['김밥', '콜라'], ['우산', '장화', '우유'], ['빵', '우유'],
+  ['라면', '김밥'], ['과자', '콜라'], ['빵'], ['우유'], ['라면', '과자'],
+];
+const ASC = { tx: [], A: 0, B: 1, sortKey: 'lift', sortDir: -1 };
+/** 받침에 따라 조사 고르기: josa('빵','을','를') → '빵을' */
+const josa = (w, t1, t2) => { const c = w.charCodeAt(w.length - 1) - 0xAC00; return w + (c >= 0 && c <= 11171 && c % 28 ? t1 : t2); };
+
+/** 연관 지표 계산
+    지지도 = (A와 B가 함께 나온 횟수) ÷ (전체 횟수)
+    신뢰도 = (A와 B가 함께 나온 횟수) ÷ (A가 나온 횟수)
+    향상도 = 신뢰도 ÷ (B가 나올 확률),  B가 나올 확률 = B 횟수 ÷ 전체 횟수 */
+function assocMetrics(n, nA, nB, nAB) {
+  const sup = n ? nAB / n : null;
+  const conf = nA ? nAB / nA : null;
+  const pB = n ? nB / n : null;
+  const lift = conf != null && pB ? conf / pB : null;
+  return { n, nA, nB, nAB, sup, conf, pB, lift };
+}
+function ascCounts(A, B) {
+  const n = ASC.tx.length;
+  let nA = 0, nB = 0, nAB = 0;
+  ASC.tx.forEach(t => { if (t[A]) nA++; if (t[B]) nB++; if (t[A] && t[B]) nAB++; });
+  return assocMetrics(n, nA, nB, nAB);
+}
+function liftInterp(l) {
+  if (l == null) return '';
+  return l >= 1 - 1e-9 ? '향상도 ≥ 1 → 관련성이 높아요.' : '향상도 < 1 → 함께 사는 경우가 오히려 적어요.';
+}
+function renderAscTable() {
+  $('#ascThead').innerHTML = '';
+  $('#ascThead').append(h('tr', {}, h('th', {}, '거래'), ITEMS.map(it => h('th', {}, it)), h('th', {}, '삭제')));
+  const tb = $('#ascTbody'); tb.innerHTML = '';
+  ASC.tx.forEach((t, i) => {
+    tb.append(h('tr', {}, h('td', {}, String(i + 1)),
+      ITEMS.map((it, j) => {
+        const cb = h('input', { type: 'checkbox', 'aria-label': `거래 ${i + 1} ${it}`, onchange: e => { ASC.tx[i][j] = e.target.checked; renderAscDerived(); } });
+        cb.checked = !!t[j];
+        return h('td', {}, cb);
+      }),
+      h('td', {}, h('button', { class: 'btn tiny', type: 'button', 'aria-label': `거래 ${i + 1} 삭제`, onclick: () => { ASC.tx.splice(i, 1); renderAsc(); } }, '✕'))));
+  });
+  if (!ASC.tx.length) tb.append(h('tr', {}, h('td', { colspan: ITEMS.length + 2 }, '거래가 없어요. “거래 추가”를 누르거나 예시 데이터를 불러오세요.')));
+}
+function renderAscDerived() {
+  const n = ASC.tx.length;
+  const tf = $('#ascTfoot'); tf.innerHTML = '';
+  tf.append(h('tr', {}, h('td', {}, '합계'), ITEMS.map((_, j) => h('td', {}, String(ASC.tx.filter(t => t[j]).length))), h('td', {}, '')));
+  $('#ascCount').textContent = `전체 거래 ${n}건`;
+  const A = ASC.A, B = ASC.B, nmA = ITEMS[A], nmB = ITEMS[B];
+  const box = $('#ascCalc');
+  if (A === B) { box.innerHTML = '<p class="msgbox warn">앞부분과 뒷부분은 서로 다른 상품을 골라 주세요.</p>'; drawVenn(null); renderRules(); ascChecker.update(); return; }
+  const m = ascCounts(A, B);
+  if (!n) { box.innerHTML = '<p class="msgbox">거래 데이터가 없어요.</p>'; drawVenn(null); renderRules(); ascChecker.update(); return; }
+  let html = `<div class="step">규칙: <b>[${nmA}] → [${nmB}]</b> (“${josa(nmA, '을', '를')} 사면 ${nmB}도 산다”)</div>
+    <div class="step">① 횟수 세기: 전체 <b>${n}</b>건 · ${nmA}(A) <b>${m.nA}</b>건 · ${nmB}(B) <b>${m.nB}</b>건 · 함께(A∩B) <b>${m.nAB}</b>건</div>
+    <div class="big">② 지지도 = (A와 B가 함께 나온 횟수) ÷ (전체 횟수) = ${m.nAB} ÷ ${n} = <b>${fmt(m.sup)}</b></div>`;
+  if (!m.nA) html += `<p class="msgbox warn">${josa(nmA, '이', '가')} 한 번도 나오지 않아 신뢰도와 향상도를 계산할 수 없어요.</p>`;
+  else {
+    html += `<div class="big">③ 신뢰도 = (A와 B가 함께 나온 횟수) ÷ (A가 나온 횟수) = ${m.nAB} ÷ ${m.nA} = <b>${fmt(m.conf)}</b></div>
+      <div class="step">④ B가 나올 확률 = B 횟수 ÷ 전체 횟수 = ${m.nB} ÷ ${n} = <b>${fmt(m.pB)}</b></div>`;
+    if (!m.nB) html += `<p class="msgbox warn">${josa(nmB, '이', '가')} 한 번도 나오지 않아 향상도를 계산할 수 없어요.</p>`;
+    else html += `<div class="big">⑤ 향상도 = 신뢰도 ÷ (B가 나올 확률) = ${fmt(m.conf)} ÷ ${fmt(m.pB)} = <b>${fmt(m.lift)}</b></div>
+      <p class="interp">💡 ${liftInterp(m.lift)}</p>`;
+  }
+  html += '<p class="note">중간값은 반올림해 보여 주고, 최종 값은 반올림 전 값으로 계산해요.</p>';
+  box.innerHTML = html;
+  drawVenn(m, nmA, nmB);
+  renderRules();
+  ascChecker.update();
+}
+function drawVenn(m, nmA, nmB) {
+  const svg = $('#ascVenn'); svg.innerHTML = ''; const bars = $('#ascBars'); bars.innerHTML = '';
+  if (!m) return;
+  svg.append(s('rect', { x: 8, y: 8, width: 424, height: 234, rx: 14, fill: '#fbfaf8', stroke: '#bdb6aa', 'stroke-width': 1.5 }));
+  svg.append(s('text', { x: 20, y: 32, class: 'tick', 'font-weight': 700 }, `전체 ${m.n}건`));
+  svg.append(s('circle', { cx: 170, cy: 132, r: 82, fill: '#ffb3c6', 'fill-opacity': .55, stroke: '#a61e4d', 'stroke-width': 2.5 }));
+  svg.append(s('circle', { cx: 270, cy: 132, r: 82, fill: '#a5d8ff', 'fill-opacity': .55, stroke: '#1864ab', 'stroke-width': 2.5, 'stroke-dasharray': '7 4' }));
+  const T = (x, y, t, sz, w) => svg.append(s('text', { x, y, 'text-anchor': 'middle', 'font-size': sz || 22, 'font-weight': w || 800, fill: '#1f2330', class: 'halo' }, t));
+  T(150, 44, `A: ${nmA} (${m.nA})`, 16, 800); T(290, 44, `B: ${nmB} (${m.nB})`, 16, 800);
+  T(130, 140, String(m.nA - m.nAB)); T(220, 140, String(m.nAB), 26, 900); T(310, 140, String(m.nB - m.nAB));
+  T(220, 165, 'A∩B', 14, 700); T(130, 165, 'A만', 14, 700); T(310, 165, 'B만', 14, 700);
+  T(380, 232, `둘 다 없음 ${m.n - m.nA - m.nB + m.nAB}`, 13, 700);
+  const mx = Math.max(m.n, 1);
+  [['전체', m.n, '#868e96'], [`A (${nmA})`, m.nA, '#e64980'], [`B (${nmB})`, m.nB, '#1c7ed6'], ['A∩B (함께)', m.nAB, '#7048e8']].forEach(([lb, v, c]) => {
+    bars.append(h('div', { class: 'bar' }, h('span', {}, lb), h('div', { class: 'track' }, h('div', { class: 'fill', style: `width:${v / mx * 100}%;background:${c}` })), h('b', {}, `${v}건`)));
+  });
+}
+function renderRules() {
+  const rows = [];
+  ITEMS.forEach((_, a) => ITEMS.forEach((_, b) => { if (a !== b) rows.push(Object.assign({ a, b, rule: `${ITEMS[a]} → ${ITEMS[b]}` }, ascCounts(a, b))); }));
+  const hide = $('#ascHideZero').checked, k = ASC.sortKey, d = ASC.sortDir;
+  const list = rows.filter(r => !hide || r.nAB > 0).sort((x, y) => {
+    if (k === 'rule') return d * x.rule.localeCompare(y.rule, 'ko');
+    const vx = x[k] == null ? -Infinity : x[k], vy = y[k] == null ? -Infinity : y[k];
+    return vx === vy ? x.rule.localeCompare(y.rule, 'ko') : d * (vx - vy);
+  });
+  const tb = $('#ascRules'); tb.innerHTML = '';
+  document.querySelectorAll('#panel-asc th[data-k]').forEach(th => th.setAttribute('aria-sort', th.dataset.k === k ? (d > 0 ? 'ascending' : 'descending') : 'none'));
+  document.querySelectorAll('#panel-asc .th-btn').forEach(bn => { bn.textContent = bn.textContent.replace(/ [▲▼]$/, '') + (bn.dataset.k === k ? (d > 0 ? ' ▲' : ' ▼') : ''); });
+  if (!list.length) { tb.append(h('tr', {}, h('td', { colspan: 5 }, '표시할 규칙이 없어요.'))); return; }
+  list.forEach(r => {
+    const go = () => { ASC.A = r.a; ASC.B = r.b; $('#ascA').value = r.a; $('#ascB').value = r.b; renderAscDerived(); $('#ascCalc').scrollIntoView({ behavior: 'smooth', block: 'center' }); };
+    tb.append(h('tr', { class: 'clickable' + (r.a === ASC.A && r.b === ASC.B ? ' sel' : ''), tabindex: 0, onclick: go, onkeydown: e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); go(); } } },
+      h('td', { style: 'font-weight:800' }, r.rule), h('td', {}, String(r.nAB)), h('td', {}, fmt(r.sup)), h('td', {}, fmt(r.conf)),
+      h('td', {}, r.lift == null ? '—' : `${fmt(r.lift)} ${r.lift >= 1 - 1e-9 ? '↑' : '↓'}`)));
+  });
+}
+function renderAscPractice() {
+  const n = +$('#pN').value, a = +$('#pA').value, b = +$('#pB').value, ab = +$('#pAB').value, out = $('#pOut');
+  if (![n, a, b, ab].every(v => isFinite(v) && v >= 0) || n <= 0) { out.innerHTML = '<p class="err">0 이상의 숫자를 넣어 주세요. (전체 횟수는 1 이상)</p>'; return; }
+  if (ab > Math.min(a, b) || a > n || b > n) { out.innerHTML = '<p class="err">함께 나온 횟수는 A, B 횟수보다 클 수 없고, A·B 횟수는 전체보다 클 수 없어요.</p>'; return; }
+  const m = assocMetrics(n, a, b, ab);
+  out.innerHTML = `<div class="step">지지도 = ${ab} ÷ ${n} = <b>${fmt(m.sup)}</b></div>
+    <div class="step">신뢰도 = ${ab} ÷ ${a} = <b>${fmt(m.conf)}</b></div>
+    <div class="step">B가 나올 확률 = ${b} ÷ ${n} = <b>${fmt(m.pB)}</b></div>
+    <div class="step">향상도 = ${fmt(m.conf)} ÷ ${fmt(m.pB)} = <b>${fmt(m.lift)}</b> ${m.lift != null ? '→ ' + liftInterp(m.lift) : ''}</div>`;
+}
+const ascValid = () => ASC.A !== ASC.B && ASC.tx.length;
+const ascChecker = makeChecker($('#ascCheck'), [
+  { id: 'asc-sup', label: '지지도', get: () => ascValid() ? ascCounts(ASC.A, ASC.B).sup : null, hint: 'A와 B가 함께 들어 있는 거래 수를 세어 전체 거래 수로 나눠요.' },
+  { id: 'asc-conf', label: '신뢰도', get: () => ascValid() ? ascCounts(ASC.A, ASC.B).conf : null, hint: '분모는 전체가 아니라 A가 들어 있는 거래 수예요.' },
+  { id: 'asc-lift', label: '향상도', get: () => ascValid() ? ascCounts(ASC.A, ASC.B).lift : null, hint: '먼저 B가 나올 확률(B 횟수 ÷ 전체)을 구하고, 신뢰도를 그 값으로 나눠요.' },
+]);
+function renderAsc() { renderAscTable(); renderAscDerived(); }
+function ascLoadExample() { ASC.tx = ASC_EXAMPLE.map(list => ITEMS.map(it => list.includes(it))); ASC.A = 0; ASC.B = 1; $('#ascA').value = 0; $('#ascB').value = 1; renderAsc(); }
+(function () {
+  ['#ascA', '#ascB'].forEach(id => {
+    const sel = $(id); ITEMS.forEach((it, i) => sel.append(h('option', { value: i }, it)));
+    sel.addEventListener('change', () => { ASC.A = +$('#ascA').value; ASC.B = +$('#ascB').value; renderAscDerived(); });
+  });
+  $('#ascAdd').addEventListener('click', () => { ASC.tx.push(ITEMS.map(() => false)); renderAsc(); const w = $('#ascTbody').closest('.tablewrap'); w.scrollTop = w.scrollHeight; });
+  $('#ascReset').addEventListener('click', () => { ASC.tx = []; renderAsc(); });
+  $('#ascExample').addEventListener('click', ascLoadExample);
+  $('#ascHideZero').addEventListener('change', renderRules);
+  document.querySelectorAll('#panel-asc .th-btn').forEach(bn => bn.addEventListener('click', () => {
+    const k = bn.dataset.k;
+    if (ASC.sortKey === k) ASC.sortDir *= -1; else { ASC.sortKey = k; ASC.sortDir = k === 'rule' ? 1 : -1; }
+    renderRules();
+  }));
+  ['#pN', '#pA', '#pB', '#pAB'].forEach(id => $(id).addEventListener('input', renderAscPractice));
+})();
+
+/* =========================================================
+   탭 전환 (키보드: ← → Home End)
+   ========================================================= */
+const TABS = [...document.querySelectorAll('[role=tab]')];
+function selectTab(t, focus) {
+  TABS.forEach(b => {
+    const on = b.dataset.t === t;
+    b.setAttribute('aria-selected', on); b.tabIndex = on ? 0 : -1;
+    $('#panel-' + b.dataset.t).hidden = !on;
+    if (on && focus) b.focus();
+  });
+  document.body.dataset.tab = t;
+  try { history.replaceState(null, '', '#' + t); } catch (e) { /* file:// 등에서는 무시 */ }
+}
+TABS.forEach((b, i) => {
+  b.addEventListener('click', () => selectTab(b.dataset.t));
+  b.addEventListener('keydown', e => {
+    let j = null;
+    if (e.key === 'ArrowRight') j = (i + 1) % TABS.length;
+    else if (e.key === 'ArrowLeft') j = (i - 1 + TABS.length) % TABS.length;
+    else if (e.key === 'Home') j = 0; else if (e.key === 'End') j = TABS.length - 1;
+    if (j != null) { e.preventDefault(); selectTab(TABS[j].dataset.t, true); }
+  });
+});
+
+/* 처음 실행: 모든 탭에 예시 데이터 */
+regLoadExample();
+clsLoadExample();
+cluLoad('three');
+renderSilPractice();
+ascLoadExample();
+renderAscPractice();
+const startTab = (location.hash || '').slice(1);
+selectTab(['reg', 'cls', 'clu', 'asc'].includes(startTab) ? startTab : 'reg');
+</script>
+<script src="../nav.js"></script>
+</body>
+</html>
